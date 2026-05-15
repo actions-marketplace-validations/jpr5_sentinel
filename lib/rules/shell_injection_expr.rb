@@ -16,7 +16,6 @@ module Rules
       github.event.discussion.title
       github.event.discussion.body
       github.event.workflow_run.head_branch
-      github.event.workflow_run.head_sha
       github.head_ref
       github.actor
       github.triggering_actor
@@ -49,7 +48,7 @@ module Rules
       (target_line - 1).downto([target_line - 20, 0].max) do |i|
         content = workflow.raw_lines[i]
         return true if content&.match?(/^\s+run:\s*[\|>]?\s*$/) || content&.match?(/^\s+run:\s+\S/)
-        return false if content&.match?(/^\s+(uses|with|if|id|name):/) || content&.match?(/^\s+-\s+name:/)
+        return false if content&.match?(/^\s+(uses|with|if|id|name|env):/) || content&.match?(/^\s+-\s+name:/)
       end
       false
     end
