@@ -15,7 +15,10 @@ module Rules
       github.event.review.body
       github.event.discussion.title
       github.event.discussion.body
+      github.event.workflow_run.head_branch
+      github.event.workflow_run.head_sha
       github.head_ref
+      github.triggering_actor
     ].freeze
 
     PATTERN = /\$\{\{\s*(#{DANGEROUS_CONTEXTS.map { |c| Regexp.escape(c) }.join('|')})/

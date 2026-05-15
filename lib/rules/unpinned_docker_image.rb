@@ -9,7 +9,7 @@ module Rules
 
       workflow.lines_of(/:latest\b/).each do |line_num|
         line = workflow.line_content(line_num)
-        next unless line&.match?(/docker:\/\/.*:latest|image:.*:latest|uses:.*:latest/)
+        next unless line&.match?(/docker:\/\/.*:latest|image:.*:latest|uses:.*:latest|docker:.*:latest|container:.*:latest/)
 
         findings << finding(workflow,
           line: line_num,

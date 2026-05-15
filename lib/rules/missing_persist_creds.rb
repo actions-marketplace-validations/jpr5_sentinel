@@ -6,6 +6,7 @@ module Rules
 
     def check(workflow)
       findings = []
+      seen_checkout_lines = Hash.new(0)
 
       workflow.jobs.each do |_job_id, job|
         job_pushes = job_does_push?(job, workflow)
@@ -19,10 +20,15 @@ module Rules
           next if persist == false || persist == "false"
           next if job_pushes && persist == true
 
-          line = find_checkout_line(workflow, step)
+          uses = step["uses"]
+          all_lines = workflow.lines_of(/uses:\s*#{Regexp.escape(uses)}/)
+          idx = seen_checkout_lines[uses]
+          line = all_lines[idx] || all_lines.last
+          seen_checkout_lines[uses] += 1
+
           findings << finding(workflow,
             line: line || 0,
-            code: "uses: #{step['uses']}",
+            code: "uses: #{uses}",
             message: "Checkout without persist-credentials: false — token persists in .git/config",
             fix: "Add persist-credentials: false to the with: block"
           )
@@ -40,11 +46,6 @@ module Rules
         run&.match?(/git push|gh pr create|peter-evans\/create-pull-request/) ||
           s["uses"]&.match?(/create-pull-request|yaml-update-action/)
       }
-    end
-
-    def find_checkout_line(workflow, step)
-      uses = step["uses"]
-      workflow.line_of(/uses:\s*#{Regexp.escape(uses)}/) if uses
     end
   end
 end

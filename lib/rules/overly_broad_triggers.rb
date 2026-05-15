@@ -14,7 +14,7 @@ module Rules
         config = triggers[trigger]
         next unless config
 
-        if config == true || config.nil? || (config.is_a?(Hash) && !config.key?("branches") && !config.key?("tags"))
+        if config == true || config.nil? || (config.is_a?(Hash) && !config.key?("branches") && !config.key?("branches-ignore") && !config.key?("tags") && !config.key?("tags-ignore") && !config.key?("paths") && !config.key?("paths-ignore"))
           line = workflow.line_of(/^\s+#{trigger}:/)
           findings << finding(workflow,
             line: line || 0,
