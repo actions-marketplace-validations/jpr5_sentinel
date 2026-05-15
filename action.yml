@@ -1,0 +1,29 @@
+name: 'Workflow Security Scanner'
+description: 'Scan GitHub Actions workflows for 21 security vulnerabilities. No AI -- deterministic pattern matching.'
+author: 'jpr5'
+
+inputs:
+  severity:
+    description: 'Minimum severity: critical, high, medium, low'
+    required: false
+    default: 'high'
+  fail-on-findings:
+    description: 'Fail the check if findings above threshold exist'
+    required: false
+    default: 'true'
+
+outputs:
+  findings-count:
+    description: 'Total findings at or above severity'
+  critical-count:
+    description: 'Critical findings count'
+  high-count:
+    description: 'High findings count'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+
+branding:
+  icon: 'shield'
+  color: 'red'

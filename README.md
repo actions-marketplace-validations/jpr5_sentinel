@@ -13,6 +13,55 @@ export GITHUB_TOKEN=$(gh auth token)  # or set manually
 
 Requires Ruby 3.1+. No dependencies beyond stdlib (`yaml`, `net/http`, `optparse`, `json`).
 
+## GitHub Action
+
+Use as a GitHub Action to automatically scan workflows on every PR:
+
+```yaml
+- uses: jpr5/gh-workflow-scanner-action@v1
+  with:
+    severity: high
+```
+
+Full workflow example:
+
+```yaml
+name: Workflow Security Scan
+on:
+  pull_request:
+    paths: ['.github/workflows/**']
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jpr5/gh-workflow-scanner-action@v1
+        id: scan
+        with:
+          severity: high
+          fail-on-findings: true
+```
+
+**Inputs:**
+
+| Name | Default | Description |
+|------|---------|-------------|
+| `severity` | `high` | Minimum severity: `critical`, `high`, `medium`, `low` |
+| `fail-on-findings` | `true` | Fail the check if findings above threshold exist |
+
+**Outputs:**
+
+| Name | Description |
+|------|-------------|
+| `findings-count` | Total findings at or above severity |
+| `critical-count` | Critical findings count |
+| `high-count` | High findings count |
+
+Findings appear as inline annotations on the PR diff -- critical/high as errors,
+medium as warnings, low as notices.
+
 ## Usage
 
 ```bash
