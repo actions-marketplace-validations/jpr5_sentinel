@@ -1,0 +1,39 @@
+name: Scanner Bot
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      pattern:
+        description: 'Vulnerability pattern'
+        type: choice
+        options:
+          - rotate
+          - shell-injection
+          - shell-injection-body
+          - shell-injection-headref
+          - shell-injection-actor
+          - dangerous-triggers
+      dry-run:
+        description: 'Dry run'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ruby/setup-ruby@a4effe49ee0ee5672cfb0b75a307434087a3183d # v1.210.0
+        with:
+          ruby-version: '3.3'
+      - name: Run bot
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOT_GITHUB_TOKEN }}
+        run: |
+          ruby bot/scanner_bot.rb \
+            --pattern "${{ inputs.pattern || 'rotate' }}" \
+            ${{ inputs.dry-run == 'true' && '--dry-run' || '' }}

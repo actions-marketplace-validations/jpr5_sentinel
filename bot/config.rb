@@ -1,0 +1,19 @@
+module Bot
+    module Config
+        MIN_STARS = 100
+        MAX_PRS_PER_DAY = 50
+        FIXABLE_RULES = %w[unpinned-actions shell-injection-expr missing-persist-credentials].freeze
+        CRITICAL_RULES = %w[unpinned-actions shell-injection-expr shell-injection-jq dangerous-triggers].freeze
+
+        SEARCH_QUERIES = [
+            { pattern: "shell-injection", query: '"${{ github.event.pull_request.title }}" path:.github/workflows language:YAML' },
+            { pattern: "shell-injection-body", query: '"${{ github.event.issue.body }}" path:.github/workflows language:YAML' },
+            { pattern: "shell-injection-headref", query: '"${{ github.head_ref }}" run path:.github/workflows language:YAML' },
+            { pattern: "shell-injection-actor", query: '"${{ github.actor }}" run path:.github/workflows language:YAML' },
+            { pattern: "dangerous-triggers", query: 'pull_request_target checkout path:.github/workflows language:YAML' },
+        ].freeze
+
+        OPT_OUT_FILE = ".github/workflow-scanner.yml"
+        STATE_FILE = "bot/state.json"
+    end
+end
