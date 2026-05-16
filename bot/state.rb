@@ -13,7 +13,10 @@ module Bot
         end
 
         def save
-            File.write(@path, JSON.pretty_generate(@data))
+            prune
+            tmp = "#{@path}.tmp"
+            File.write(tmp, JSON.pretty_generate(@data))
+            File.rename(tmp, @path)
         end
 
         def already_processed?(repo_name, rule)
@@ -28,7 +31,7 @@ module Bot
         def record_scan(repo_name, findings)
             @data["repos"][repo_name] ||= { "scans" => [], "prs" => [] }
             @data["repos"][repo_name]["scans"] << {
-                "timestamp" => Time.now.iso8601,
+                "timestamp" => Time.now.utc.iso8601,
                 "finding_count" => findings.length,
                 "rules" => findings.map { |f| f.is_a?(Hash) ? f[:rule] : f.rule }.uniq,
             }
@@ -39,14 +42,14 @@ module Bot
             @data["repos"][repo_name]["prs"] << {
                 "url" => pr_url,
                 "rule" => rule,
-                "timestamp" => Time.now.iso8601,
+                "timestamp" => Time.now.utc.iso8601,
             }
 
             @data["prs"] << {
                 "repo" => repo_name,
                 "url" => pr_url,
                 "rule" => rule,
-                "timestamp" => Time.now.iso8601,
+                "timestamp" => Time.now.utc.iso8601,
             }
         end
 
@@ -59,7 +62,7 @@ module Bot
         end
 
         def prs_opened_today
-            today = Time.now.strftime("%Y-%m-%d")
+            today = Time.now.utc.strftime("%Y-%m-%d")
             @data["prs"].count { |pr| pr["timestamp"]&.start_with?(today) }
         end
 
@@ -73,6 +76,15 @@ module Bot
                 total_prs: @data["prs"].length,
                 prs_today: prs_opened_today,
                 opt_outs: @data["opt_outs"].length,
+            }
+        end
+
+        private
+
+        def prune(max_age_days: 90)
+            cutoff = (Time.now.utc - max_age_days * 86400).iso8601
+            @data["repos"].delete_if { |_, v|
+                v["last_scanned_at"] && v["last_scanned_at"] < cutoff && v["status"] == "scanned"
             }
         end
     end

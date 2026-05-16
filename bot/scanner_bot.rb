@@ -2,6 +2,7 @@
 
 require "optparse"
 require "json"
+require "yaml"
 require_relative "../lib/scanner"
 require_relative "config"
 require_relative "search"
@@ -11,6 +12,7 @@ require_relative "pr_writer"
 module Bot
     class ScannerBot
         def initialize(token:, pattern: "rotate", dry_run: false)
+            @token = token
             @search = Search.new(token: token)
             @state = State.new
             @pr_writer = PrWriter.new(token: token)
@@ -54,9 +56,8 @@ module Bot
         private
 
         def build_scanner
-            client_class = GitHubClient
             formatter = Formatter::Json.new
-            Scanner.new(client: client_class.new, formatter: formatter, min_severity: :critical)
+            Scanner.new(client: GitHubClient.new(token: @token), formatter: formatter, min_severity: :critical)
         end
 
         def scan_and_fix(repo, pattern)
@@ -88,7 +89,7 @@ module Bot
             $stderr.puts "  Found #{critical_findings.length} critical findings"
 
             # Check for opt-out file
-            gh_client = GitHubClient.new
+            gh_client = GitHubClient.new(token: @token)
             if gh_client.file_exists?(repo[:full_name], Config::OPT_OUT_FILE)
                 opt_out_content = gh_client.fetch_file_content(repo[:full_name], Config::OPT_OUT_FILE)
                 if opt_out_content

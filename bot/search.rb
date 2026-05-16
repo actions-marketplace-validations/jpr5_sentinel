@@ -8,7 +8,7 @@ module Bot
         MAX_PAGES = 10
         PER_PAGE = 30
         # GitHub Code Search rate limit: 10 requests/minute
-        SEARCH_DELAY = 6
+        SEARCH_DELAY = 7
 
         def initialize(token:)
             @token = token
