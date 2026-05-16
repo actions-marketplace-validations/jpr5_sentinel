@@ -33,7 +33,7 @@ module AutoFix
     end
 
     def self.apply(finding, raw_content, sha_resolver: nil)
-        lines = raw_content.lines
+        lines = raw_content.gsub("\r\n", "\n").lines
 
         case finding.rule
         when "unpinned-actions"
@@ -70,7 +70,7 @@ module AutoFix
         return lines.join if target_idx < 0 || target_idx >= lines.length
 
         pinned = "#{owner_action}@#{sha} # #{tag}"
-        lines[target_idx] = lines[target_idx].sub(uses_string, pinned)
+        lines[target_idx] = lines[target_idx].sub(uses_string) { pinned }
 
         lines.join
     end
@@ -142,7 +142,8 @@ module AutoFix
                 context = ENV_VAR_NAMES.key(var)
                 next unless context
                 # Replace ${{ context }} with $VAR (for shell context)
-                lines[i] = lines[i].gsub(/\$\{\{\s*#{Regexp.escape(context)}\s*\}\}/, "$#{var}")
+                replacement = "$#{var}"
+                lines[i] = lines[i].gsub(/\$\{\{\s*#{Regexp.escape(context)}\s*\}\}/) { replacement }
             end
         end
 
@@ -183,7 +184,7 @@ module AutoFix
 
                 # If we hit another step-level key (env:, name:, id:, if:, etc.)
                 # that's at the same indent as uses:+2 spaces, stop
-                if current =~ /^\s*(env|name|id|if|continue-on-error|timeout-minutes|run):/
+                if current =~ /^\s*(env|name|id|if|uses|with|continue-on-error|timeout-minutes|run|working-directory|shell):/
                     break
                 end
             end
@@ -192,7 +193,19 @@ module AutoFix
         if with_idx
             # with: block exists, add persist-credentials: false to it
             with_indent = lines[with_idx][/^(\s*)/, 1]
-            entry_indent = with_indent + "    "
+
+            # Detect entry indent from first existing entry under with:
+            entry_indent = nil
+            (with_idx + 1..[with_idx + 10, lines.length - 1].min).each do |i|
+                if lines[i].strip.length > 0
+                    candidate_indent = lines[i][/^(\s*)/, 1] || ""
+                    if candidate_indent.length > with_indent.length
+                        entry_indent = candidate_indent
+                    end
+                    break
+                end
+            end
+            entry_indent ||= with_indent + "  "
 
             # Check if persist-credentials is already there (shouldn't be since
             # the rule flagged it, but be safe)
@@ -208,11 +221,10 @@ module AutoFix
                 lines.insert(insert_at, "#{entry_indent}persist-credentials: false\n")
             end
         else
-            # No with: block — add one after the uses: line
-            with_indent = uses_indent + "  "
-            entry_indent = with_indent + "  "
+            # No with: block — add one at same indent as uses:, entry one level deeper
+            entry_indent = uses_indent + "  "
 
-            new_block = "#{with_indent}with:\n#{entry_indent}persist-credentials: false\n"
+            new_block = "#{uses_indent}with:\n#{entry_indent}persist-credentials: false\n"
             lines.insert(target_idx + 1, new_block)
         end
 
@@ -271,8 +283,14 @@ module AutoFix
         run_indent = lines[run_line_idx][/^(\s*)/, 1]
 
         if lines[run_line_idx] =~ /^\s+run:\s*[|>]\s*$/
-            # Multi-line run block — collect continuation lines
-            content_indent_length = run_indent.length + 2
+            # Multi-line run block — detect actual indent from first continuation line
+            next_line = lines[run_line_idx + 1]
+            if next_line && next_line.strip.length > 0
+                actual_indent = next_line[/^(\s*)/, 1]
+                content_indent_length = actual_indent.length
+            else
+                content_indent_length = run_indent.length + 2
+            end
             i = run_line_idx + 1
             while i < lines.length
                 line = lines[i]
