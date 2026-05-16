@@ -45,8 +45,10 @@ cmd = [
 
 stdout, stderr, status = Open3.capture3(*cmd)
 
-unless stderr.empty?
-    $stderr.puts stderr
+unless status.success? || status.exitstatus == 1  # exit 1 = findings found, expected
+    $stderr.puts "Scanner exited with code #{status.exitstatus}"
+    $stderr.puts stderr unless stderr.empty?
+    # Still try to parse output if we got any
 end
 
 # Parse JSON output
