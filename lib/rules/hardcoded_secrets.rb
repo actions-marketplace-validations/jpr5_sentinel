@@ -12,11 +12,12 @@ module Rules
       "GitHub server token" => /ghs_[A-Za-z0-9]{36}/,
       "Private key" => /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/,
       "Slack webhook" => /hooks\.slack\.com\/services\/T[A-Z0-9]+\/B[A-Z0-9]+\/[A-Za-z0-9]+/,
-      "Generic API key" => /(?:api[_-]?key|apikey|secret[_-]?key|auth[_-]?token)\s*[:=]\s*['"][A-Za-z0-9]{20,}['"]/i,
+      "Generic API key" => /(?:api[_-]?key|apikey|secret[_-]?key|auth[_-]?token)\s*[:=]\s*['"][A-Za-z0-9]{30,}['"]/i,
     }.freeze
 
     PASSWORD_PATTERN = /password:\s*[^\s${\#]+/i
     SAFE_VALUE_PATTERN = /\$\{\{.*\}\}|\$[A-Z_]+/
+    SAFE_PASSWORDS = %w[postgres password test example changeme admin root dummy placeholder].freeze
 
     def check(workflow)
       findings = []
@@ -39,11 +40,12 @@ module Rules
           end
         end
 
-        # Check for hardcoded passwords (skip safe references)
+        # Check for hardcoded passwords (skip safe references and common test values)
         if line.match?(PASSWORD_PATTERN)
           # Extract the value after password:
           value = line[/password:\s*(.+)/i, 1]&.strip
           if value && !value.match?(SAFE_VALUE_PATTERN) && !value.start_with?("#")
+            next if SAFE_PASSWORDS.include?(value.strip.downcase)
             findings << finding(workflow,
               line: line_num,
               code: stripped,

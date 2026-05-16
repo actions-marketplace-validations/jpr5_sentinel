@@ -35,6 +35,8 @@ module Bot
                 "finding_count" => findings.length,
                 "rules" => findings.map { |f| f.is_a?(Hash) ? f[:rule] : f.rule }.uniq,
             }
+            @data["repos"][repo_name]["last_scanned_at"] = Time.now.utc.iso8601
+            @data["repos"][repo_name]["status"] ||= "scanned"
         end
 
         def record_pr(repo_name, pr_url, rule)
