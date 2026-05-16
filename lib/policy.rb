@@ -67,25 +67,21 @@ class Policy
     end
 
     def validate!
-        # Strict validation — unknown top-level keys are errors
         unknown_top = @config.keys - KNOWN_TOP_KEYS
         unknown_top.each { |k| @errors << "Unknown key '#{k}' in #{@path}" }
 
-        # Validate severity value
         if @config["severity"]
             unless %w[critical high medium low].include?(@config["severity"].to_s)
                 @errors << "Invalid severity '#{@config["severity"]}' — must be critical, high, medium, or low"
             end
         end
 
-        # Validate rules section — unknown rule names are errors
         if @config["rules"]
             known_rules = load_known_rules
             @config["rules"].each do |rule, val|
                 unless known_rules.include?(rule)
                     @errors << "Unknown rule '#{rule}' in rules section"
                 end
-                # YAML parses "off" as boolean false
                 normalized = val == false ? "off" : val.to_s
                 unless %w[critical high medium low off].include?(normalized)
                     @errors << "Invalid severity '#{val}' for rule '#{rule}' — must be critical, high, medium, low, or off"
@@ -93,22 +89,11 @@ class Policy
             end
         end
 
-        # Validate policy section
         if @config["policy"]
             unknown_policy = @config["policy"].keys - KNOWN_POLICY_KEYS
             unknown_policy.each { |k| @errors << "Unknown key '#{k}' in policy section" }
-
-            # Policy require/recommend — warn (not error) on unknown rule names for forward compat
-            %w[require recommend].each do |section|
-                items = @config.dig("policy", section) || []
-                items.each do |item|
-                    # These are policy names, not rule names — just warn
-                    # (allows org configs to reference rules from newer versions)
-                end
-            end
         end
 
-        # Validate exceptions have required fields
         (@config["exceptions"] || []).each_with_index do |ex, i|
             unless ex.is_a?(Hash) && ex["rule"]
                 @errors << "Exception ##{i + 1} missing required 'rule' field"
@@ -120,7 +105,6 @@ class Policy
     end
 
     def load_known_rules
-        # Get rule names from the engine + scanner-level rules
         rules = []
         rules_dir = File.join(File.dirname(__FILE__), "rules")
         if File.directory?(rules_dir)
