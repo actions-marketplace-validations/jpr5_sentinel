@@ -642,12 +642,12 @@
         z-index: 10;
         padding: 0.75rem 1rem;
         background: #0d1220;
-        border-bottom: 2px solid var(--accent);
+        border-bottom: 2px solid var(--border-bright);
         font-weight: 600;
         text-align: left;
         font-family: var(--font-mono);
         font-size: 0.8rem;
-        color: var(--accent);
+        color: var(--text-secondary);
         white-space: nowrap;
       }
       .rules-table tbody td {
@@ -710,6 +710,7 @@
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 1.5rem;
+        max-width: 100%;
       }
       .quickstart-card {
         background: var(--bg-card);
@@ -717,6 +718,7 @@
         border-radius: 12px;
         padding: 1.75rem;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        min-width: 0;
       }
       .quickstart-card h3 {
         font-size: 0.95rem;
@@ -998,19 +1000,19 @@
         <div class="install-box install-box--multi">
           <div class="run-cmd">
             <span class="prompt-sign">$</span>
-            <code>gem install sentinel</code>
+            <code>gem install sentinel-ci</code>
             <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
           </div>
           <div class="run-or">or</div>
           <div class="run-cmd">
             <span class="prompt-sign">$</span>
-            <code>bin/gh-workflow-scanner owner/repo</code>
+            <code>sentinel scan owner/repo</code>
             <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
           </div>
         </div>
 
         <p class="install-secondary">
-          Requires Ruby 3.1+. No dependencies beyond stdlib.
+          Requires Ruby 3.2+. No dependencies beyond stdlib.
         </p>
 
         <div class="demo-grid">
@@ -1043,7 +1045,7 @@
     <span class="syn-key">runs-on</span><span class="syn-bracket">:</span> <span class="syn-str">ubuntu-latest</span>
     <span class="syn-key">steps</span><span class="syn-bracket">:</span>
       - <span class="syn-key">uses</span><span class="syn-bracket">:</span> <span class="syn-str">actions/checkout@v4</span>
-      - <span class="syn-key">uses</span><span class="syn-bracket">:</span> <span class="syn-str">jpr5/gh-workflow-scanner-action@v1</span>
+      - <span class="syn-key">uses</span><span class="syn-bracket">:</span> <span class="syn-str">CopilotKit/sentinel@v1</span>
         <span class="syn-key">id</span><span class="syn-bracket">:</span> <span class="syn-str">scan</span>
         <span class="syn-key">with</span><span class="syn-bracket">:</span>
           <span class="syn-key">severity</span><span class="syn-bracket">:</span> <span class="syn-str">high</span>
@@ -1283,25 +1285,25 @@
             <h3>Single repo</h3>
             <pre><span class="comment-text"># Scan a remote repo via GitHub API</span>
 <span class="prompt-sign">$</span> <span class="cmd-text">export GITHUB_TOKEN=$(gh auth token)</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner owner/repo</span></pre>
+<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan owner/repo</span></pre>
           </div>
 
           <div class="quickstart-card fade-in" style="transition-delay: 0.1s">
             <h3>Local checkout</h3>
             <pre><span class="comment-text"># Scan a local directory</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner --local .</span>
+<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --local .</span>
 
 <span class="comment-text"># Or a specific path</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner --local /path/to/repo</span></pre>
+<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --local /path/to/repo</span></pre>
           </div>
 
           <div class="quickstart-card fade-in" style="transition-delay: 0.2s">
             <h3>Entire org</h3>
             <pre><span class="comment-text"># Scan every repo in an org</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner --org my-org</span>
+<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --org my-org</span>
 
 <span class="comment-text"># JSON output, high+ severity only</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner --org my-org \</span>
+<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --org my-org \</span>
   <span class="cmd-text">--format json --severity high</span></pre>
           </div>
         </div>
@@ -1388,7 +1390,7 @@
         // Step 1: User types command
         {
           type: "prompt",
-          text: "bin/gh-workflow-scanner acme-corp/web-app",
+          text: "sentinel scan acme-corp/web-app",
           delay: 600,
         },
         // Step 2: Scanning starts
