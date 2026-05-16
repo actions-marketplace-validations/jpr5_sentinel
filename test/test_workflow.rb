@@ -53,7 +53,7 @@ class TestWorkflow < Minitest::Test
         # on: push parses as {true => "push"} or {"on" => "push"} depending on context
         # The triggers method handles both
         triggers = wf.triggers
-        refute_nil triggers
+        assert_equal "push", triggers, "shorthand 'on: push' should return the string 'push'"
     end
 
     def test_jobs_accessor

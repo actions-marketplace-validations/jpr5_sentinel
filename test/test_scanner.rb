@@ -38,7 +38,7 @@ class TestScanner < Minitest::Test
 
         findings = result[:findings]
         unpinned = findings.select { |f| f.rule == "unpinned-actions" }
-        assert_operator unpinned.length, :>=, 1
+        assert_equal 1, unpinned.length
     end
 
     def test_scan_counts_workflows
@@ -96,6 +96,7 @@ class TestScanner < Minitest::Test
         scanner = Scanner.new(client: client, formatter: formatter, min_severity: :critical)
         result = scanner.scan("test-repo")
         findings = result[:findings]
+        refute_empty findings, "severity filter test must produce findings to be meaningful"
         findings.each do |f|
             assert_equal :critical, f.severity
         end
@@ -217,6 +218,22 @@ class TestScanner < Minitest::Test
         result = scanner.scan("test-repo")
 
         assert_includes result[:output], "test-repo"
+    end
+
+    def test_scan_empty_workflow_directory
+        # No workflows written — just dependabot to isolate
+        write_dependabot
+
+        client = LocalClient.new(@tmpdir)
+        formatter = Formatter::Json.new
+        scanner = Scanner.new(client: client, formatter: formatter)
+        result = scanner.scan("test-repo")
+
+        assert_equal 0, result[:workflow_count]
+        workflow_findings = result[:findings].reject { |f|
+            %w[missing-dependabot missing-zizmor].include?(f.rule)
+        }
+        assert_empty workflow_findings
     end
 
     private
