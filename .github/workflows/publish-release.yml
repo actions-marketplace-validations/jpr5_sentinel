@@ -93,10 +93,26 @@ jobs:
         with:
           ruby-version: '3.3'
 
-      - name: Publish to RubyGems (trusted publishing)
+      - name: Configure RubyGems trusted publishing
         run: |
-          gem exec rubygems-oidc-action --sign-in
-          gem push sentinel-ci-*.gem
+          # Exchange GitHub OIDC token for RubyGems API key
+          OIDC_TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=rubygems.org" | ruby -rjson -e 'puts JSON.parse(STDIN.read)["value"]')
+          API_KEY=$(curl -s -X POST "https://rubygems.org/api/v1/oidc/api_key_roles/token" \
+            -H "Content-Type: application/json" \
+            -d "{\"jwt\": \"${OIDC_TOKEN}\"}" | ruby -rjson -e 'puts JSON.parse(STDIN.read)["rubygems_api_key"]')
+          if [ -z "$API_KEY" ] || [ "$API_KEY" = "null" ]; then
+            echo "ERROR: Failed to obtain RubyGems OIDC token"
+            exit 1
+          fi
+          echo "::add-mask::$API_KEY"
+          mkdir -p ~/.gem
+          echo "---" > ~/.gem/credentials
+          echo ":rubygems_api_key: $API_KEY" >> ~/.gem/credentials
+          chmod 0600 ~/.gem/credentials
+
+      - name: Publish to RubyGems
+        run: gem push sentinel-ci-*.gem
 
 
       - name: Create git tag
