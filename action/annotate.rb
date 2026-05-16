@@ -25,6 +25,10 @@ def annotation_level(severity)
     end
 end
 
+def sanitize_annotation(text)
+    text.to_s.gsub(/[\r\n]/, " ").gsub("::", ": :").strip
+end
+
 def set_output(name, value)
     output_file = ENV["GITHUB_OUTPUT"]
     if output_file && !output_file.empty?
@@ -104,6 +108,14 @@ def push_inline_fixes(workspace, branch, repo, token)
         system("git", "config", "user.name", "sentinel[bot]")
         system("git", "config", "user.email", "sentinel[bot]@users.noreply.github.com")
 
+        # Configure credential helper instead of embedding token in URL
+        system("git", "remote", "set-url", "origin", "https://github.com/#{repo}.git",
+               [:out, :err] => File::NULL)
+        system("git", "config", "--local",
+               "url.https://x-access-token:#{token}@github.com/.insteadOf",
+               "https://github.com/",
+               [:out, :err] => File::NULL)
+
         # Checkout the PR branch (we may be on the merge ref)
         system("git", "fetch", "origin", branch)
         system("git", "checkout", branch)
@@ -114,11 +126,11 @@ def push_inline_fixes(workspace, branch, repo, token)
             system("git", "commit", "-m",
                 "fix: auto-fix workflow security findings\n\nApplied by Sentinel (https://github.com/jpr5/sentinel)")
 
-            remote_url = "https://x-access-token:#{token}@github.com/#{repo}.git"
-            if system("git", "push", remote_url, branch)
+            if system("git", "push", "origin", branch,
+                      [:err] => File::NULL)
                 puts "Pushed fixes to branch #{branch}"
             else
-                $stderr.puts "Failed to push fixes to #{branch}"
+                $stderr.puts "Failed to push to #{branch}. Check repository permissions."
             end
         end
     end
@@ -131,6 +143,15 @@ def create_fix_pr(workspace, repo, token)
 
         system("git", "config", "user.name", "sentinel[bot]")
         system("git", "config", "user.email", "sentinel[bot]@users.noreply.github.com")
+
+        # Configure credential helper instead of embedding token in URL
+        system("git", "remote", "set-url", "origin", "https://github.com/#{repo}.git",
+               [:out, :err] => File::NULL)
+        system("git", "config", "--local",
+               "url.https://x-access-token:#{token}@github.com/.insteadOf",
+               "https://github.com/",
+               [:out, :err] => File::NULL)
+
         system("git", "checkout", "-b", branch)
         system("git", "add", ".github/workflows/")
 
@@ -138,12 +159,12 @@ def create_fix_pr(workspace, repo, token)
             system("git", "commit", "-m",
                 "fix: auto-fix workflow security findings\n\nApplied by Sentinel (https://github.com/jpr5/sentinel)")
 
-            remote_url = "https://x-access-token:#{token}@github.com/#{repo}.git"
-            if system("git", "push", remote_url, branch)
+            if system("git", "push", "origin", branch,
+                      [:err] => File::NULL)
                 create_pr_via_api(repo, branch, token)
                 puts "Created fix PR from branch #{branch}"
             else
-                $stderr.puts "Failed to push branch #{branch}"
+                $stderr.puts "Failed to push to #{branch}. Check repository permissions."
             end
         end
     end
@@ -240,7 +261,7 @@ findings.each do |f|
     annotation = "[#{rule}] #{message}"
     annotation += ". Fix: #{fix}" if fix && !fix.empty?
 
-    puts "::#{level} file=#{annotation_file},line=#{line}::#{annotation}"
+    puts "::#{level} file=#{annotation_file},line=#{line}::#{sanitize_annotation(annotation)}"
 end
 
 # Print terminal-format summary

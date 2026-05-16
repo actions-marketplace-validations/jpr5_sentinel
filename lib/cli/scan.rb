@@ -103,11 +103,12 @@ elsif !options[:org] && client.respond_to?(:fetch_file_content)
     # Remote repo — try to download .sentinel-ci.yml
     content = client.fetch_file_content(repo, ".sentinel-ci.yml")
     if content
-        require "tempfile"
-        tmp = Tempfile.new([".sentinel-ci", ".yml"])
-        tmp.write(content)
-        tmp.close
-        Policy.new(tmp.path)
+        require "tmpdir"
+        policy_path = File.join(Dir.tmpdir, "sentinel-policy-#{Process.pid}.yml")
+        File.write(policy_path, content)
+        policy = Policy.new(policy_path)
+        File.delete(policy_path) rescue nil
+        policy
     else
         Policy.new
     end

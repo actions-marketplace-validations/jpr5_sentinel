@@ -107,7 +107,8 @@ class TestAiFix < Minitest::Test
         assert_includes prompt, "Fix ONLY the identified security finding"
         assert_includes prompt, "Preserve all existing functionality"
         assert_includes prompt, "Return ONLY the complete fixed YAML"
-        assert_includes prompt, "Do not wrap in markdown code fences"
+        assert_includes prompt, "no markdown fences"
+        assert_includes prompt, "UNTRUSTED user data"
     end
 
     # --- extract_yaml strips markdown fences ---
