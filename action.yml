@@ -12,15 +12,11 @@ inputs:
     required: false
     default: 'true'
   fix:
-    description: 'Auto-fix findings (mechanical fixes for 6 rules)'
+    description: 'Auto-fix findings. Mechanical only by default. Add anthropic-key for AI-powered fixes.'
     required: false
     default: 'false'
-  ai-fix:
-    description: 'Also use AI-powered fixes for complex rules (requires ai-key)'
-    required: false
-    default: 'false'
-  ai-key:
-    description: 'Anthropic API key for AI-powered fixes'
+  anthropic-key:
+    description: 'Anthropic API key — enables AI-powered fixes for all 28 rules when fix is true'
     required: false
     default: ''
 

@@ -292,8 +292,8 @@ if ENV["INPUT_FIX"] == "true"
     repo       = ENV["GITHUB_REPOSITORY"]
     token      = ENV["GITHUB_TOKEN"] || ENV["INPUT_GITHUB_TOKEN"]
 
-    ai_fix = ENV["INPUT_AI_FIX"] == "true"
-    ai_key = ENV["INPUT_AI_KEY"]
+    ai_key = ENV["INPUT_ANTHROPIC_KEY"]
+    ai_fix = ai_key && !ai_key.empty?
 
     puts ""
     puts "Fix mode enabled — applying fixes..."
