@@ -595,6 +595,30 @@
         line-height: 1.6;
       }
 
+      /* ─── Section: GitHub Action ───────────────────────────────────── */
+      .section-action {
+        padding: 4.5rem 0;
+      }
+      .section-action h2 {
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        text-align: center;
+        margin-bottom: 3rem;
+      }
+      .action-panel-wrap {
+        max-width: 700px;
+        margin: 0 auto;
+      }
+      .action-description {
+        max-width: 700px;
+        margin: 1.5rem auto 0;
+        text-align: center;
+        color: var(--text-secondary);
+        font-size: 1rem;
+        line-height: 1.7;
+      }
+
       /* ─── Section: Rules Table ───────────────────────────────────── */
       .section-rules {
         padding: 4.5rem 0;
@@ -1137,6 +1161,48 @@
             </p>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- ─── Section: GitHub Action ──────────────────────────────── -->
+    <section class="section-action" id="action">
+      <div class="container">
+        <h2 class="fade-in">Add to your CI in 30 seconds</h2>
+
+        <div class="action-panel-wrap fade-in" style="transition-delay: 0.1s">
+          <div class="demo-panel">
+            <div class="demo-titlebar">
+              <div class="dots"><span></span><span></span><span></span></div>
+              <span class="title">.github/workflows/sentinel.yml</span>
+            </div>
+            <div class="demo-body">
+              <pre><span class="syn-key">name</span><span class="syn-bracket">:</span> <span class="syn-str">Workflow Security</span>
+<span class="syn-key">on</span><span class="syn-bracket">:</span>
+  <span class="syn-key">pull_request</span><span class="syn-bracket">:</span>
+    <span class="syn-key">paths</span><span class="syn-bracket">:</span> <span class="syn-bracket">[</span><span class="syn-str">'.github/workflows/**'</span><span class="syn-bracket">]</span>
+
+<span class="syn-key">permissions</span><span class="syn-bracket">:</span>
+  <span class="syn-key">contents</span><span class="syn-bracket">:</span> <span class="syn-str">read</span>
+
+<span class="syn-key">jobs</span><span class="syn-bracket">:</span>
+  <span class="syn-key">scan</span><span class="syn-bracket">:</span>
+    <span class="syn-key">runs-on</span><span class="syn-bracket">:</span> <span class="syn-str">ubuntu-latest</span>
+    <span class="syn-key">timeout-minutes</span><span class="syn-bracket">:</span> <span class="syn-num">10</span>
+    <span class="syn-key">steps</span><span class="syn-bracket">:</span>
+      - <span class="syn-key">uses</span><span class="syn-bracket">:</span> <span class="syn-str">actions/checkout@v4</span>
+        <span class="syn-key">with</span><span class="syn-bracket">:</span>
+          <span class="syn-key">persist-credentials</span><span class="syn-bracket">:</span> <span class="syn-bool">false</span>
+      - <span class="syn-key">uses</span><span class="syn-bracket">:</span> <span class="syn-str">CopilotKit/sentinel@v1</span>
+        <span class="syn-key">with</span><span class="syn-bracket">:</span>
+          <span class="syn-key">severity</span><span class="syn-bracket">:</span> <span class="syn-str">high</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <p class="action-description fade-in" style="transition-delay: 0.2s">
+          Findings appear as inline annotations on pull request diffs &mdash;
+          critical and high as errors, medium as warnings. Merge gates on severity threshold.
+        </p>
       </div>
     </section>
 
