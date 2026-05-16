@@ -6,14 +6,16 @@ require_relative "local_client"
 require_relative "clone_client"
 require_relative "auto_fix"
 require_relative "ai_fix"
+require_relative "policy"
 require_relative "formatter/terminal"
 require_relative "formatter/json"
 
 class Scanner
-    def initialize(client:, formatter:, min_severity: :low)
+    def initialize(client:, formatter:, min_severity: :low, policy: nil)
         @client = client
         @formatter = formatter
         @min_severity = min_severity
+        @policy = policy || Policy.new
         @engine = RuleEngine.new
     end
 
@@ -60,6 +62,30 @@ class Scanner
         end
 
         findings.select! { |f| severity_passes?(f.severity) }
+
+        # Apply policy overrides
+        if @policy.loaded?
+            # Filter out ignored files
+            findings.reject! { |f| @policy.ignored?(f.file) }
+
+            # Filter out excepted findings
+            findings.reject! { |f| @policy.excepted?(f) }
+
+            # Apply rule severity overrides — :off removes, others change severity
+            findings.map! { |f|
+                override = @policy.rule_severity(f.rule)
+                if override == :off
+                    nil
+                elsif override
+                    Finding.new(**f.to_h.merge(severity: override))
+                else
+                    f
+                end
+            }.compact!
+
+            # Re-apply severity filter after overrides
+            findings.select! { |f| severity_passes?(f.severity) }
+        end
 
         output = @formatter.format(
             repo: repo,

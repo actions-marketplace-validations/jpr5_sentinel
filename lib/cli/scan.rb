@@ -19,6 +19,7 @@ parser = OptionParser.new do |opts|
     opts.on("--severity LEVEL", %i[critical high medium low],
             "Minimum severity: critical, high, medium, low (default: low)") do |s|
         options[:severity] = s
+        options[:severity_explicit] = true
     end
 
     opts.on("--local PATH", "Scan a local directory instead of GitHub API") do |p|
@@ -94,12 +95,42 @@ else
     end
 end
 
+# Load .sentinel-ci.yml policy config
+policy = if options[:local]
+    policy_path = File.join(options[:local], ".sentinel-ci.yml")
+    File.exist?(policy_path) ? Policy.new(policy_path) : Policy.new
+elsif !options[:org] && client.respond_to?(:fetch_file_content)
+    # Remote repo — try to download .sentinel-ci.yml
+    content = client.fetch_file_content(repo, ".sentinel-ci.yml")
+    if content
+        require "tempfile"
+        tmp = Tempfile.new([".sentinel-ci", ".yml"])
+        tmp.write(content)
+        tmp.close
+        Policy.new(tmp.path)
+    else
+        Policy.new
+    end
+else
+    Policy.new
+end
+
+if policy.errors.any?
+    policy.errors.each { |e| $stderr.puts "Policy error: #{e}" }
+    exit 2
+end
+
+# Use policy severity as default if not explicitly overridden on CLI
+unless options[:severity_explicit]
+    options[:severity] = policy.min_severity if policy.loaded?
+end
+
 formatter = case options[:format]
 when "json"  then Formatter::Json.new
 else              Formatter::Terminal.new
 end
 
-scanner = Scanner.new(client: client, formatter: formatter, min_severity: options[:severity])
+scanner = Scanner.new(client: client, formatter: formatter, min_severity: options[:severity], policy: policy)
 
 all_findings = []
 
