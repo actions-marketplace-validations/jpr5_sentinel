@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.0 (2026-05-16)
+
+### New Features
+- MCP server for AI coding agents (sentinel mcp)
+- Remote fix with PR creation (sentinel fix owner/repo)
+- Policy engine wired into GitHub Action
+
+### Security Fixes
+- Git credential leakage prevention in action fix mode
+- Prompt injection mitigation in AI fix (XML fences + UNTRUSTED warning)
+- Annotation injection sanitization
+- Tempfile race condition in policy loading
+
+### Test Coverage
+- 459 tests, 1358 assertions
+- Added: ShaResolver, RuleEngine, bot state, formatter, CLI fix tests
+- All 28 rules have test coverage
+
 ## 0.2.0 (2026-05-16)
 
 ### New Rules (7)
