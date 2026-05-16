@@ -30,4 +30,28 @@ class LocalClient
             nil
         end
     end
+
+    def fetch_platform_configs
+        configs = []
+
+        # GitLab CI
+        %w[.gitlab-ci.yml .gitlab-ci.yaml].each do |name|
+            path = File.join(@path, name)
+            if File.exist?(path)
+                configs << { platform: :gitlab, filename: name, content: File.read(path) }
+                break
+            end
+        end
+
+        # Bitbucket Pipelines
+        %w[bitbucket-pipelines.yml bitbucket-pipelines.yaml].each do |name|
+            path = File.join(@path, name)
+            if File.exist?(path)
+                configs << { platform: :bitbucket, filename: name, content: File.read(path) }
+                break
+            end
+        end
+
+        configs
+    end
 end
