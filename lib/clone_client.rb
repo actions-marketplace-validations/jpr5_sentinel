@@ -5,6 +5,8 @@ require_relative "local_client"
 class CloneClient
     REPO_FORMAT = %r{\A[A-Za-z0-9\-_.]+/[A-Za-z0-9\-_.]+\z}
 
+    attr_reader :tmpdir
+
     def initialize
         @tmpdir = nil
     end
