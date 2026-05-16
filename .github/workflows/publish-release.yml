@@ -1,0 +1,127 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde # v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Check if version is already published
+        id: check
+        run: |
+          VERSION=$(ruby -e 'require_relative "lib/version"; puts Sentinel::VERSION')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if gem search ^sentinel-ci$ --remote --exact --versions | grep -q "${VERSION}"; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests
+        if: steps.check.outputs.published == 'false'
+        run: rake test
+
+      - name: Build gem
+        if: steps.check.outputs.published == 'false'
+        run: gem build sentinel-ci.gemspec
+
+      - name: Upload gem
+        if: steps.check.outputs.published == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gem
+          path: sentinel-ci-*.gem
+          retention-days: 1
+
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      published: ${{ steps.check.outputs.published }}
+
+  publish:
+    needs: build
+    if: needs.build.outputs.published == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: rubygems
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure git credentials
+        run: |
+          git config --local url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Download gem
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gem
+
+      - uses: ruby/setup-ruby@6aaa311d81eba98ae12eaffbcb63296ace0efcde # v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Publish to RubyGems
+        run: |
+          mkdir -p ~/.gem
+          echo "---" > ~/.gem/credentials
+          echo ":rubygems_api_key: ${GEM_HOST_API_KEY}" >> ~/.gem/credentials
+          chmod 0600 ~/.gem/credentials
+          gem push sentinel-ci-*.gem
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+
+      - name: Create git tag
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          TAG="v${VERSION}"
+          if ! git rev-parse "${TAG}" >/dev/null 2>&1; then
+            git tag "${TAG}"
+            git push origin "${TAG}"
+          fi
+
+      - name: Update major version tag
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          MAJOR="v$(echo "${VERSION}" | cut -d. -f1)"
+          git tag -f "${MAJOR}"
+          git push origin "${MAJOR}" --force
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          TAG="v${VERSION}"
+          gh release create "${TAG}" \
+            sentinel-ci-*.gem \
+            --generate-notes \
+            --title "${TAG}" \
+            --verify-tag \
+            --latest
+
+    outputs:
+      version: ${{ needs.build.outputs.version }}
