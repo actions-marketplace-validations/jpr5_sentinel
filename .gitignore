@@ -4,3 +4,4 @@ pkg/
 tmp/
 coverage/
 bot/state.json
+Gemfile.lock
