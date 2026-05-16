@@ -1,2 +1,6 @@
-bot/state.json
 *.gem
+pkg/
+.bundle/
+tmp/
+coverage/
+bot/state.json

@@ -33,7 +33,9 @@ jobs:
       - name: Run bot
         env:
           GITHUB_TOKEN: ${{ secrets.BOT_GITHUB_TOKEN }}
+          PATTERN: ${{ inputs.pattern || 'rotate' }}
+          DRY_RUN: ${{ inputs.dry-run }}
         run: |
-          ruby bot/scanner_bot.rb \
-            --pattern "${{ inputs.pattern || 'rotate' }}" \
-            ${{ inputs.dry-run == 'true' && '--dry-run' || '' }}
+          args="--pattern $PATTERN"
+          if [ "$DRY_RUN" = "true" ]; then args="$args --dry-run"; fi
+          ruby bot/scanner_bot.rb $args
