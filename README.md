@@ -33,16 +33,16 @@ For private repos or `--org` scanning, set `GITHUB_TOKEN`.
 
 ```bash
 # Scan a single repo
-bin/gh-workflow-scanner owner/repo
+sentinel scan owner/repo
 
 # Scan a local checkout
-bin/gh-workflow-scanner --local /path/to/repo
+sentinel scan --local /path/to/repo
 
 # Scan an entire GitHub org
-bin/gh-workflow-scanner --org my-org
+sentinel scan --org my-org
 
 # JSON output, filter to high+ severity
-bin/gh-workflow-scanner --format json --severity high owner/repo
+sentinel scan --format json --severity high owner/repo
 ```
 
 ## GitHub Action
@@ -50,7 +50,7 @@ bin/gh-workflow-scanner --format json --severity high owner/repo
 Use as a GitHub Action to automatically scan workflows on every PR:
 
 ```yaml
-- uses: jpr5/gh-workflow-scanner-action@v1
+- uses: jpr5/sentinel@v1
   with:
     severity: high
 ```
@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jpr5/gh-workflow-scanner-action@v1
+      - uses: jpr5/sentinel@v1
         id: scan
         with:
           severity: high
@@ -125,7 +125,7 @@ medium as warnings, low as notices.
 Sentinel can automatically generate fixes for three rule categories:
 
 ```bash
-bin/gh-workflow-scanner --fix owner/repo    # future CLI flag
+sentinel scan --fix owner/repo    # future CLI flag
 ```
 
 Or use the Ruby API directly:
@@ -181,7 +181,7 @@ ruby bot/scanner_bot.rb --pattern shell-injection --dry-run
 ## Architecture
 
 ```
-bin/gh-workflow-scanner         # CLI entry point (optparse)
+bin/sentinel                    # CLI entry point (subcommand dispatcher)
 action/
   annotate.rb                   # GitHub Action annotation emitter
 lib/
