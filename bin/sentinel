@@ -9,7 +9,7 @@ HELP_TEXT = <<~HELP
 
     Commands:
         scan [REPO]           Scan a repo, org, or local path for vulnerabilities
-        fix [REPO]            Auto-fix findings (coming soon)
+        fix [REPO]            Auto-fix security findings in workflows
         bot                   Run the PR bot
         version               Print version
         help                  Show this help message

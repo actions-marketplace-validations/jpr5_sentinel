@@ -6,6 +6,9 @@ module AutoFix
         unpinned-actions
         shell-injection-expr
         missing-persist-credentials
+        workflow-dispatch-injection
+        missing-permissions
+        missing-timeouts
     ].freeze
 
     # Context expression -> env var name mappings
@@ -26,6 +29,9 @@ module AutoFix
         "github.triggering_actor"              => "TRIGGERING_ACTOR",
     }.freeze
 
+    # Workflow dispatch input expressions
+    DISPATCH_INPUT_PATTERN = /\$\{\{\s*(inputs\.[a-zA-Z0-9_.-]+|github\.event\.inputs\.[a-zA-Z0-9_.-]+)\s*\}\}/
+
     DANGEROUS_EXPR_PATTERN = /\$\{\{\s*(#{ENV_VAR_NAMES.keys.map { |k| Regexp.escape(k) }.join('|')})\s*\}\}/
 
     def self.can_fix?(finding)
@@ -42,6 +48,12 @@ module AutoFix
             fix_shell_injection(lines, finding)
         when "missing-persist-credentials"
             fix_persist_credentials(lines, finding)
+        when "workflow-dispatch-injection"
+            fix_dispatch_injection(lines, finding)
+        when "missing-permissions"
+            fix_missing_permissions(lines, finding)
+        when "missing-timeouts"
+            fix_missing_timeouts(lines, finding)
         else
             raw_content
         end
@@ -231,6 +243,186 @@ module AutoFix
         lines.join
     end
 
+
+    # --- workflow-dispatch-injection ---
+
+    def self.fix_dispatch_injection(lines, finding)
+        target_idx = finding.line - 1
+        return lines.join if target_idx < 0 || target_idx >= lines.length
+
+        # Collect all dispatch input expressions on this line
+        line = lines[target_idx]
+        expressions = line.scan(DISPATCH_INPUT_PATTERN).flatten.uniq
+
+        return lines.join if expressions.empty?
+
+        # Find the step's run: line by walking backwards
+        run_line_idx = find_run_line(lines, target_idx)
+        return lines.join unless run_line_idx
+
+        # Determine the step-level indentation (same as run:)
+        run_indent = lines[run_line_idx][/^(\s*)/, 1]
+
+        # Build env var mappings from input expressions
+        env_mappings = {}
+        expressions.each do |expr|
+            # inputs.foo -> INPUT_FOO
+            # github.event.inputs.foo -> INPUT_FOO
+            var_name = expr
+                .sub(/^github\.event\.inputs\./, "")
+                .sub(/^inputs\./, "")
+                .upcase
+                .gsub(/[^A-Z0-9]/, "_")
+            var_name = "INPUT_#{var_name}"
+            env_mappings[var_name] = "${{ #{expr} }}"
+        end
+
+        return lines.join if env_mappings.empty?
+
+        # Check if there's already an env: block at the step level
+        existing_env_idx = find_step_env_block(lines, run_line_idx, run_indent)
+
+        if existing_env_idx
+            insert_idx = find_env_block_end(lines, existing_env_idx, run_indent)
+            env_entry_indent = run_indent + "    "
+
+            new_entries = env_mappings.map { |var, expr| "#{env_entry_indent}#{var}: #{expr}\n" }
+            new_entries.reverse.each do |entry|
+                lines.insert(insert_idx, entry)
+            end
+            if insert_idx <= run_line_idx
+                run_line_idx += new_entries.length
+            end
+        else
+            env_lines = ["#{run_indent}env:\n"]
+            env_mappings.each do |var, expr|
+                env_lines << "#{run_indent}    #{var}: #{expr}\n"
+            end
+
+            env_lines.reverse.each { |el| lines.insert(run_line_idx, el) }
+            inserted_count = env_lines.length
+            run_line_idx += inserted_count
+        end
+
+        # Replace ${{ inputs.* }} and ${{ github.event.inputs.* }} with $VAR in the run block
+        run_block_range = find_run_block_range(lines, run_line_idx)
+
+        run_block_range.each do |i|
+            env_mappings.each do |var, _expr_val|
+                # Find the original expression that mapped to this var
+                expressions.each do |expr|
+                    test_name = expr
+                        .sub(/^github\.event\.inputs\./, "")
+                        .sub(/^inputs\./, "")
+                        .upcase
+                        .gsub(/[^A-Z0-9]/, "_")
+                    next unless "INPUT_#{test_name}" == var
+                    replacement = "$#{var}"
+                    lines[i] = lines[i].gsub(/\$\{\{\s*#{Regexp.escape(expr)}\s*\}\}/) { replacement }
+                end
+            end
+        end
+
+        lines.join
+    end
+
+    # --- missing-permissions ---
+
+    def self.fix_missing_permissions(lines, finding)
+        # Find where to insert permissions block.
+        # Insert after the on: trigger block ends (before the next top-level key).
+        on_line_idx = nil
+        lines.each_with_index do |line, i|
+            if line =~ /^on\s*:/ || line =~ /^'on'\s*:/ || line =~ /^"on"\s*:/
+                on_line_idx = i
+                break
+            end
+            # YAML treats bare `on` as boolean true key
+            if line =~ /^true\s*:/
+                on_line_idx = i
+                break
+            end
+        end
+
+        return lines.join unless on_line_idx
+
+        # Walk forward from on: to find where the on: block ends.
+        # The on: block ends when we hit the next top-level key (no leading whitespace).
+        insert_idx = on_line_idx + 1
+        while insert_idx < lines.length
+            line = lines[insert_idx]
+            # Skip blank lines and indented/commented lines
+            if line.strip.empty? || line =~ /^\s/ || line =~ /^#/
+                insert_idx += 1
+                next
+            end
+            # We've hit a top-level key (jobs:, env:, concurrency:, etc.)
+            break
+        end
+
+        # Check if permissions already exists (defensive)
+        lines.each do |line|
+            return lines.join if line =~ /^permissions\s*:/
+        end
+
+        # Insert permissions block
+        permissions_block = "permissions:\n  contents: read\n\n"
+        lines.insert(insert_idx, permissions_block)
+
+        lines.join
+    end
+
+    # --- missing-timeouts ---
+
+    def self.fix_missing_timeouts(lines, finding)
+        target_idx = finding.line - 1
+        return lines.join if target_idx < 0 || target_idx >= lines.length
+
+        # The finding line should point to the job definition or its runs-on.
+        # We need to find the runs-on: line for this job.
+        # If the finding line IS the runs-on line, use it directly.
+        # Otherwise, search forward from the finding line for runs-on:.
+        runs_on_idx = nil
+
+        if lines[target_idx] =~ /^\s+runs-on:/
+            runs_on_idx = target_idx
+        else
+            # Search forward from finding line for runs-on:
+            search_end = [target_idx + 20, lines.length - 1].min
+            (target_idx..search_end).each do |i|
+                if lines[i] =~ /^\s+runs-on:/
+                    runs_on_idx = i
+                    break
+                end
+            end
+        end
+
+        return lines.join unless runs_on_idx
+
+        # Get the indentation of runs-on:
+        indent = lines[runs_on_idx][/^(\s*)/, 1]
+
+        # Check if timeout-minutes already exists at this job level (defensive)
+        # Walk forward from runs-on checking for timeout-minutes at same indent
+        check_idx = runs_on_idx + 1
+        while check_idx < lines.length
+            check_line = lines[check_idx]
+            check_indent = check_line[/^(\s*)/, 1] || ""
+            # Stop if we leave the job block (less indentation and non-blank)
+            break if check_line.strip.length > 0 && check_indent.length < indent.length
+            if check_line =~ /^\s*timeout-minutes:/ && check_indent == indent
+                return lines.join  # Already has timeout
+            end
+            check_idx += 1
+        end
+
+        # Insert timeout-minutes right after runs-on:
+        timeout_line = "#{indent}timeout-minutes: 30\n"
+        lines.insert(runs_on_idx + 1, timeout_line)
+
+        lines.join
+    end
+
     # --- Private helpers ---
 
     def self.extract_uses_string(code)
@@ -351,17 +543,17 @@ if __FILE__ == $0
     )
 
     unfixable = Finding.new(
-        rule: "missing-permissions",
-        severity: :medium,
+        rule: "dangerous-triggers",
+        severity: :critical,
         file: "ci.yml",
         line: 1,
-        code: "on: [push]",
-        message: "No permissions block",
-        fix: "Add permissions"
+        code: "on: pull_request_target",
+        message: "Dangerous trigger",
+        fix: "Review manually"
     )
 
     puts "can_fix?(unpinned-actions): #{AutoFix.can_fix?(pinnable)}"
-    puts "can_fix?(missing-permissions): #{AutoFix.can_fix?(unfixable)}"
+    puts "can_fix?(dangerous-triggers): #{AutoFix.can_fix?(unfixable)}"
     puts
 
     # Test 2: SHA pinning (with a mock resolver)
