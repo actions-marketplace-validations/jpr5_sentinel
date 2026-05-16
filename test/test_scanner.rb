@@ -236,6 +236,111 @@ class TestScanner < Minitest::Test
         assert_empty workflow_findings
     end
 
+    def test_scan_malformed_yaml_does_not_crash
+        write_workflow("valid.yml", <<~YAML)
+          name: CI
+          on: push
+          permissions:
+            contents: read
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - run: echo hi
+        YAML
+
+        write_workflow("malformed.yml", <<~YAML)
+          name: Bad
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - run: echo "unterminated
+                  {{: invalid yaml here :::
+                  - [broken
+        YAML
+
+        write_dependabot
+
+        client = LocalClient.new(@tmpdir)
+        formatter = Formatter::Json.new
+        scanner = Scanner.new(client: client, formatter: formatter)
+
+        # Should not raise
+        result = scanner.scan("test-repo")
+        assert_kind_of Hash, result
+        assert_equal 2, result[:workflow_count]
+    end
+
+    def test_scan_directory_with_no_workflows_dir
+        # Create a tmpdir without .github/workflows/
+        empty_dir = Dir.mktmpdir("sentinel-empty")
+        begin
+            # Create .github but not workflows
+            FileUtils.mkdir_p(File.join(empty_dir, ".github"))
+            # Add dependabot to avoid that finding
+            File.write(File.join(empty_dir, ".github", "dependabot.yml"), <<~YAML)
+              version: 2
+              updates:
+                - package-ecosystem: github-actions
+                  directory: /
+                  schedule:
+                    interval: weekly
+            YAML
+
+            client = LocalClient.new(empty_dir)
+            formatter = Formatter::Json.new
+            scanner = Scanner.new(client: client, formatter: formatter)
+            result = scanner.scan("test-repo")
+
+            assert_equal 0, result[:workflow_count]
+        ensure
+            FileUtils.rm_rf(empty_dir)
+        end
+    end
+
+    def test_scan_completely_empty_directory
+        empty_dir = Dir.mktmpdir("sentinel-totally-empty")
+        begin
+            client = LocalClient.new(empty_dir)
+            formatter = Formatter::Json.new
+            scanner = Scanner.new(client: client, formatter: formatter)
+            result = scanner.scan("test-repo")
+
+            assert_equal 0, result[:workflow_count]
+            assert_kind_of Array, result[:findings]
+        ensure
+            FileUtils.rm_rf(empty_dir)
+        end
+    end
+
+    def test_scan_only_yaml_extension_files
+        # Write a .txt file in workflows dir — should be ignored
+        File.write(File.join(@workflows_dir, "not-a-workflow.txt"), "just text")
+
+        write_workflow("real.yml", <<~YAML)
+          name: CI
+          on: push
+          permissions:
+            contents: read
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - run: echo hi
+        YAML
+
+        write_dependabot
+
+        client = LocalClient.new(@tmpdir)
+        formatter = Formatter::Json.new
+        scanner = Scanner.new(client: client, formatter: formatter)
+        result = scanner.scan("test-repo")
+
+        assert_equal 1, result[:workflow_count]
+    end
+
     private
 
     def write_workflow(name, content)
