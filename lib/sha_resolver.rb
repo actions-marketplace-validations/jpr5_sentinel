@@ -24,7 +24,9 @@ class ShaResolver
     end
 
     def fetch_sha(repo, tag)
-        uri = URI("#{API_BASE}/repos/#{repo}/commits/#{tag}")
+        encoded_repo = repo.split("/").map { |p| URI.encode_www_form_component(p) }.join("/")
+        encoded_tag = URI.encode_www_form_component(tag)
+        uri = URI("#{API_BASE}/repos/#{encoded_repo}/commits/#{encoded_tag}")
         req = Net::HTTP::Get.new(uri)
         req["Accept"] = "application/vnd.github+json"
         req["Authorization"] = "Bearer #{@token}" if @token
@@ -51,5 +53,8 @@ class ShaResolver
             $stderr.puts "ShaResolver: API error #{resp.code} for #{repo}@#{tag}"
             nil
         end
+    rescue Net::OpenTimeout, Net::ReadTimeout, SocketError, Errno::ECONNREFUSED => e
+        $stderr.puts "SHA resolve failed for #{repo}@#{tag}: #{e.message}"
+        nil
     end
 end
