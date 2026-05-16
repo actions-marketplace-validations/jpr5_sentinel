@@ -3,6 +3,7 @@ require_relative "workflow"
 require_relative "rule_engine"
 require_relative "github_client"
 require_relative "local_client"
+require_relative "clone_client"
 require_relative "formatter/terminal"
 require_relative "formatter/json"
 

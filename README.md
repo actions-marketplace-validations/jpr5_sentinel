@@ -14,21 +14,20 @@ Documentation: https://sentinel.copilotkit.dev
 ## Install
 
 ```bash
-# One-shot (like npx — Ruby 3.2+)
-gem exec sentinel-ci scan owner/repo
-
-# Or install globally
+# Zero-config for public repos — no GITHUB_TOKEN needed
 gem install sentinel-ci
 sentinel scan owner/repo
 
-# Or clone and run directly
-git clone https://github.com/CopilotKit/sentinel.git
-cd sentinel
+# One-shot (like npx)
+gem exec sentinel-ci scan owner/repo
+
+# For private repos or org scanning, set a token
 export GITHUB_TOKEN=$(gh auth token)
-bin/sentinel scan owner/repo
+sentinel scan --org my-org
 ```
 
-Requires Ruby 3.2+. No dependencies beyond stdlib (`yaml`, `net/http`, `optparse`, `json`).
+Requires Ruby 3.2+ and `git`. Public repos are scanned via shallow clone -- no API token required.
+For private repos or `--org` scanning, set `GITHUB_TOKEN`.
 
 ## Usage
 
@@ -169,8 +168,8 @@ ruby bot/scanner_bot.rb --pattern shell-injection --dry-run
 --format FORMAT    terminal (default) or json
 --severity LEVEL   minimum severity: critical, high, medium, low (default: low)
 --local PATH       scan local directory
---org ORG          scan all repos in a GitHub org
---token TOKEN      GitHub API token (default: GITHUB_TOKEN env var)
+--org ORG          scan all repos in a GitHub org (requires GITHUB_TOKEN)
+--token TOKEN      GitHub API token — only needed for private repos and --org scanning
 ```
 
 ## Exit Codes

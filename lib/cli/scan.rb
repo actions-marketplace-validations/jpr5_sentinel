@@ -62,8 +62,22 @@ end
 
 client = if options[:local]
     LocalClient.new(options[:local])
+elsif options[:org]
+    # Org scan always needs API (to list repos)
+    token = options[:token] || ENV["GITHUB_TOKEN"]
+    unless token
+        $stderr.puts "Error: --org requires GITHUB_TOKEN (need API to list repos)"
+        exit 2
+    end
+    GitHubClient.new(token: token)
 else
-    GitHubClient.new(token: options[:token])
+    # Single repo — prefer clone (no auth needed for public repos)
+    token = options[:token] || ENV["GITHUB_TOKEN"]
+    if token
+        GitHubClient.new(token: token)
+    else
+        CloneClient.new
+    end
 end
 
 formatter = case options[:format]
@@ -75,39 +89,43 @@ scanner = Scanner.new(client: client, formatter: formatter, min_severity: option
 
 all_findings = []
 
-if options[:local]
-    result = scanner.scan(options[:local])
-    puts result[:output]
-    all_findings.concat(result[:findings])
-elsif options[:org]
-    results = scanner.scan_org(options[:org])
+begin
+    if options[:local]
+        result = scanner.scan(options[:local])
+        puts result[:output]
+        all_findings.concat(result[:findings])
+    elsif options[:org]
+        results = scanner.scan_org(options[:org])
 
-    if options[:format] == "json"
-        combined = results.map { |r| JSON.parse(r[:output]) }
-        puts JSON.pretty_generate(combined)
-    else
-        results.each { |r| puts r[:output] }
+        if options[:format] == "json"
+            combined = results.map { |r| JSON.parse(r[:output]) }
+            puts JSON.pretty_generate(combined)
+        else
+            results.each { |r| puts r[:output] }
 
-        totals = Hash.new(0)
-        results.each do |r|
-            r[:findings].each { |f| totals[f.severity] += 1 }
+            totals = Hash.new(0)
+            results.each do |r|
+                r[:findings].each { |f| totals[f.severity] += 1 }
+            end
+
+            summary = Finding::SEVERITIES
+                .select { |s| totals[s] > 0 }
+                .map { |s| "#{totals[s]} #{s}" }
+                .join(", ")
+
+            total = results.sum { |r| r[:findings].length }
+            $stderr.puts "\nOrg scan complete: #{results.length} repos, #{total} findings (#{summary})"
         end
 
-        summary = Finding::SEVERITIES
-            .select { |s| totals[s] > 0 }
-            .map { |s| "#{totals[s]} #{s}" }
-            .join(", ")
-
-        total = results.sum { |r| r[:findings].length }
-        $stderr.puts "\nOrg scan complete: #{results.length} repos, #{total} findings (#{summary})"
+        results.each { |r| all_findings.concat(r[:findings]) }
+    else
+        result = scanner.scan(repo)
+        puts result[:output]
+        all_findings.concat(result[:findings])
     end
 
-    results.each { |r| all_findings.concat(r[:findings]) }
-else
-    result = scanner.scan(repo)
-    puts result[:output]
-    all_findings.concat(result[:findings])
+    has_critical_or_high = all_findings.any? { |f| f.critical? || f.high? }
+    exit(has_critical_or_high ? 1 : 0)
+ensure
+    client.cleanup if client.respond_to?(:cleanup)
 end
-
-has_critical_or_high = all_findings.any? { |f| f.critical? || f.high? }
-exit(has_critical_or_high ? 1 : 0)
