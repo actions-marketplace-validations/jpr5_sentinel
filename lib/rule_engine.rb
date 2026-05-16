@@ -1,3 +1,5 @@
+require_relative "finding"
+
 class RuleEngine
     attr_reader :rules
 
