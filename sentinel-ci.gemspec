@@ -2,7 +2,7 @@ Gem::Specification.new do |s|
     s.name        = "sentinel-ci"
     s.version     = File.read(File.join(__dir__, "lib", "version.rb"))[/VERSION\s*=\s*"([^"]+)"/, 1]
     s.summary     = "Deterministic security scanner for GitHub Actions workflows"
-    s.description = "Scan GitHub Actions workflows for 21 security vulnerabilities. " \
+    s.description = "Scan GitHub Actions workflows for 28 security vulnerabilities. " \
                     "SHA pinning, shell injection, credential exposure, dangerous triggers. " \
                     "No AI, no dependencies — pure Ruby stdlib."
     s.authors     = ["Jordan Ritter"]

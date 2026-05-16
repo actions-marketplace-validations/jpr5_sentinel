@@ -13,7 +13,7 @@
     <title>sentinel — Deterministic security scanner for GitHub Actions workflows</title>
     <meta
       name="description"
-      content="Deterministic pattern matching against 21 security dimensions. SHA pinning, shell injection, credential exposure, dangerous triggers — everything your workflows need auditing for."
+      content="Deterministic pattern matching against 28 security dimensions. SHA pinning, shell injection, credential exposure, dangerous triggers — everything your workflows need auditing for."
     />
 
     <!-- Open Graph / Social -->
@@ -22,13 +22,13 @@
     <meta property="og:title" content="sentinel — Deterministic security scanner for GitHub Actions workflows" />
     <meta
       property="og:description"
-      content="21 security rules. No AI, no gems, pure Ruby. Find CI vulnerabilities before attackers do."
+      content="28 security rules. No AI, no gems, pure Ruby. Find CI vulnerabilities before attackers do."
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="sentinel — Find CI vulnerabilities before attackers do" />
     <meta
       name="twitter:description"
-      content="Deterministic pattern matching against 21 security dimensions. No AI, no gems, pure Ruby."
+      content="Deterministic pattern matching against 28 security dimensions. No AI, no gems, pure Ruby."
     />
 
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
@@ -1019,7 +1019,7 @@
       <div class="container">
         <div class="hero-badge">
           <span class="dot"></span>
-          21 rules &middot; No AI &middot; Pure Ruby
+          28 rules &middot; No AI &middot; Pure Ruby
         </div>
 
         <h1>
@@ -1028,7 +1028,7 @@
         </h1>
 
         <p class="hero-sub">
-          Deterministic pattern matching against 21 security dimensions.
+          Deterministic pattern matching against 28 security dimensions.
           SHA pinning, shell injection, credential exposure, dangerous triggers &mdash;
           everything your workflows need auditing for. No AI, no gems, no false confidence.
         </p>
@@ -1105,7 +1105,7 @@
         <div class="feature-grid">
           <div class="feature-card fade-in">
             <div class="feature-icon">&#128737;</div>
-            <h3>21 Security Rules</h3>
+            <h3>28 Security Rules</h3>
             <p>
               Critical to low, covering supply chain attacks, shell injection,
               credential exposure, permission scoping, and dangerous triggers.
@@ -1209,7 +1209,7 @@
     <!-- ─── Section 3: Rules Table ───────────────────────────────── -->
     <section class="section-rules" id="rules">
       <div class="container">
-        <h2 class="fade-in">21 security dimensions</h2>
+        <h2 class="fade-in">28 security dimensions</h2>
         <p class="rules-sub fade-in" style="transition-delay: 0.1s">
           Every rule maps to a documented exploit vector. No heuristics, no guessing &mdash;
           deterministic pattern matching against known-bad configurations.
@@ -1246,108 +1246,150 @@
               </tr>
               <tr>
                 <td>4</td>
+                <td>hardcoded-secrets</td>
+                <td><span class="sev-critical">critical</span></td>
+                <td>AWS keys, GitHub PATs, private keys, passwords in plain text</td>
+              </tr>
+              <tr>
+                <td>5</td>
+                <td>self-hosted-runner-fork</td>
+                <td><span class="sev-critical">critical</span></td>
+                <td>Self-hosted runner on fork PR triggers</td>
+              </tr>
+              <tr>
+                <td>6</td>
+                <td>github-script-injection</td>
+                <td><span class="sev-critical">critical</span></td>
+                <td>Attacker-controllable <code>${{ }}</code> in github-script</td>
+              </tr>
+              <tr>
+                <td>7</td>
                 <td>dangerous-triggers</td>
                 <td><span class="sev-critical">critical</span></td>
                 <td><code>pull_request_target</code> + fork code checkout</td>
               </tr>
               <tr>
-                <td>5</td>
+                <td>8</td>
                 <td>missing-persist-credentials</td>
                 <td><span class="sev-high">high</span></td>
                 <td><code>actions/checkout</code> without <code>persist-credentials: false</code></td>
               </tr>
               <tr>
-                <td>6</td>
+                <td>9</td>
                 <td>credential-window</td>
                 <td><span class="sev-high">high</span></td>
                 <td>Git credentials configured far from push step</td>
               </tr>
               <tr>
-                <td>7</td>
+                <td>10</td>
                 <td>static-aws-credentials</td>
                 <td><span class="sev-high">high</span></td>
                 <td>Static AWS keys instead of OIDC federation</td>
               </tr>
               <tr>
-                <td>8</td>
+                <td>11</td>
                 <td>unscoped-app-token</td>
                 <td><span class="sev-high">high</span></td>
                 <td><code>create-github-app-token</code> without permission scoping</td>
               </tr>
               <tr>
-                <td>9</td>
+                <td>12</td>
                 <td>docker-build-arg-secrets</td>
                 <td><span class="sev-high">high</span></td>
                 <td>Secrets in Docker build-args (visible in image layers)</td>
               </tr>
               <tr>
-                <td>10</td>
+                <td>13</td>
                 <td>build-publish-same-job</td>
                 <td><span class="sev-high">high</span></td>
                 <td>Build + publish in same job with publish secrets</td>
               </tr>
               <tr>
-                <td>11</td>
+                <td>14</td>
                 <td>curl-pipe-shell</td>
                 <td><span class="sev-high">high</span></td>
                 <td><code>curl | sh</code> without integrity verification</td>
               </tr>
               <tr>
-                <td>12</td>
+                <td>15</td>
+                <td>workflow-dispatch-injection</td>
+                <td><span class="sev-high">high</span></td>
+                <td><code>${{ inputs.* }}</code> in run blocks</td>
+              </tr>
+              <tr>
+                <td>16</td>
                 <td>missing-permissions</td>
                 <td><span class="sev-medium">medium</span></td>
                 <td>No top-level permissions block</td>
               </tr>
               <tr>
-                <td>13</td>
+                <td>17</td>
                 <td>git-config-global</td>
                 <td><span class="sev-medium">medium</span></td>
                 <td><code>git config --global</code> with credentials</td>
               </tr>
               <tr>
-                <td>14</td>
+                <td>18</td>
                 <td>missing-timeouts</td>
                 <td><span class="sev-medium">medium</span></td>
                 <td>Jobs without <code>timeout-minutes</code></td>
               </tr>
               <tr>
-                <td>15</td>
+                <td>19</td>
                 <td>missing-env-protection</td>
                 <td><span class="sev-medium">medium</span></td>
                 <td>Publish/deploy jobs without environment protection</td>
               </tr>
               <tr>
-                <td>16</td>
+                <td>20</td>
                 <td>allow-forks-artifact</td>
                 <td><span class="sev-medium">medium</span></td>
                 <td>Fork-produced artifact download in privileged context</td>
               </tr>
               <tr>
-                <td>17</td>
+                <td>21</td>
                 <td>missing-frozen-lockfile</td>
                 <td><span class="sev-medium">medium</span></td>
                 <td>Package install without <code>--frozen-lockfile</code> / <code>npm ci</code></td>
               </tr>
               <tr>
-                <td>18</td>
+                <td>22</td>
+                <td>cache-poisoning</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td>Cache keys with fork-controllable refs</td>
+              </tr>
+              <tr>
+                <td>23</td>
+                <td>excessive-permissions</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td>Write permissions on jobs that only read</td>
+              </tr>
+              <tr>
+                <td>24</td>
+                <td>unpinned-artifact</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td>download-artifact without specific name</td>
+              </tr>
+              <tr>
+                <td>25</td>
                 <td>unpinned-docker-image</td>
                 <td><span class="sev-low">low</span></td>
                 <td>Docker images using <code>:latest</code> tag</td>
               </tr>
               <tr>
-                <td>19</td>
+                <td>26</td>
                 <td>overly-broad-triggers</td>
                 <td><span class="sev-low">low</span></td>
                 <td>Push/PR triggers without branch/path filters</td>
               </tr>
               <tr>
-                <td>20</td>
+                <td>27</td>
                 <td>missing-dependabot</td>
                 <td><span class="sev-low">low</span></td>
                 <td>No Dependabot config for github-actions ecosystem</td>
               </tr>
               <tr>
-                <td>21</td>
+                <td>28</td>
                 <td>missing-zizmor</td>
                 <td><span class="sev-low">low</span></td>
                 <td>No zizmor static analysis workflow</td>

@@ -7,7 +7,7 @@
 ![Ruby](https://img.shields.io/badge/ruby-3.2%2B-red)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-Scan GitHub Actions workflows for 21 security vulnerabilities. No AI, no gems -- pure Ruby stdlib.
+Scan GitHub Actions workflows for 28 security vulnerabilities. No AI, no gems -- pure Ruby stdlib.
 
 Documentation: https://sentinel.copilotkit.dev
 
@@ -101,24 +101,31 @@ medium as warnings, low as notices.
 | 1 | `unpinned-actions` | critical/medium | Tag-pinned actions (critical for third-party, medium for `actions/*`) |
 | 2 | `shell-injection-expr` | critical | Attacker-controllable `${{ }}` in `run:` blocks |
 | 3 | `shell-injection-jq` | critical | `${VAR}` in double-quoted jq/curl strings |
-| 4 | `dangerous-triggers` | critical | `pull_request_target` + fork code checkout |
-| 5 | `missing-persist-credentials` | high | `actions/checkout` without `persist-credentials: false` |
-| 6 | `credential-window` | high | Git credentials configured far from push step |
-| 7 | `static-aws-credentials` | high | Static AWS keys instead of OIDC federation |
-| 8 | `unscoped-app-token` | high | `create-github-app-token` without `permission-*` scoping |
-| 9 | `docker-build-arg-secrets` | high | Secrets in Docker build-args (visible in image layers) |
-| 10 | `build-publish-same-job` | high | Build + publish in same job with publish secrets |
-| 11 | `curl-pipe-shell` | high | `curl \| sh` without integrity verification |
-| 12 | `missing-permissions` | medium | No top-level permissions block |
-| 13 | `git-config-global` | medium | `git config --global` with credentials |
-| 14 | `missing-timeouts` | medium | Jobs without `timeout-minutes` |
-| 15 | `missing-env-protection` | medium | Publish/deploy jobs without environment protection |
-| 16 | `allow-forks-artifact` | medium | Fork-produced artifact download in privileged context |
-| 17 | `missing-frozen-lockfile` | medium | Package install without `--frozen-lockfile` / `npm ci` |
-| 18 | `unpinned-docker-image` | low | Docker images using `:latest` tag |
-| 19 | `overly-broad-triggers` | low | Push/PR triggers without branch/path filters |
-| 20 | `missing-dependabot` | low | No Dependabot config for github-actions ecosystem |
-| 21 | `missing-zizmor` | low | No zizmor static analysis workflow |
+| 4 | `hardcoded-secrets` | critical | AWS keys, GitHub PATs, private keys, passwords in plain text |
+| 5 | `self-hosted-runner-fork` | critical | Self-hosted runner on fork PR triggers |
+| 6 | `github-script-injection` | critical | Attacker-controllable `${{ }}` in github-script |
+| 7 | `dangerous-triggers` | critical | `pull_request_target` + fork code checkout |
+| 8 | `missing-persist-credentials` | high | `actions/checkout` without `persist-credentials: false` |
+| 9 | `credential-window` | high | Git credentials configured far from push step |
+| 10 | `static-aws-credentials` | high | Static AWS keys instead of OIDC federation |
+| 11 | `unscoped-app-token` | high | `create-github-app-token` without `permission-*` scoping |
+| 12 | `docker-build-arg-secrets` | high | Secrets in Docker build-args (visible in image layers) |
+| 13 | `build-publish-same-job` | high | Build + publish in same job with publish secrets |
+| 14 | `curl-pipe-shell` | high | `curl \| sh` without integrity verification |
+| 15 | `workflow-dispatch-injection` | high | `${{ inputs.* }}` in run blocks |
+| 16 | `missing-permissions` | medium | No top-level permissions block |
+| 17 | `git-config-global` | medium | `git config --global` with credentials |
+| 18 | `missing-timeouts` | medium | Jobs without `timeout-minutes` |
+| 19 | `missing-env-protection` | medium | Publish/deploy jobs without environment protection |
+| 20 | `allow-forks-artifact` | medium | Fork-produced artifact download in privileged context |
+| 21 | `missing-frozen-lockfile` | medium | Package install without `--frozen-lockfile` / `npm ci` |
+| 22 | `cache-poisoning` | medium | Cache keys with fork-controllable refs |
+| 23 | `excessive-permissions` | medium | Write permissions on jobs that only read |
+| 24 | `unpinned-artifact` | medium | download-artifact without specific name |
+| 25 | `unpinned-docker-image` | low | Docker images using `:latest` tag |
+| 26 | `overly-broad-triggers` | low | Push/PR triggers without branch/path filters |
+| 27 | `missing-dependabot` | low | No Dependabot config for github-actions ecosystem |
+| 28 | `missing-zizmor` | low | No zizmor static analysis workflow |
 
 ## Auto-Fix
 
@@ -198,7 +205,7 @@ lib/
     json.rb                     # JSON output
   rules/
     base.rb                     # abstract rule interface
-    *.rb                        # one file per rule (19 rules)
+    *.rb                        # one file per rule (26 rules)
 bot/
   scanner_bot.rb                # PR bot orchestrator
   search.rb                     # GitHub Code Search client
