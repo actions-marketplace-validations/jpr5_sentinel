@@ -43,6 +43,9 @@ sentinel scan --org my-org
 
 # JSON output, filter to high+ severity
 sentinel scan --format json --severity high owner/repo
+
+# SARIF output for GitHub Security tab
+sentinel scan --format sarif owner/repo > results.sarif
 ```
 
 ## GitHub Action
@@ -200,7 +203,7 @@ ruby bot/scanner_bot.rb --pattern shell-injection --dry-run
 ## Options
 
 ```
---format FORMAT    terminal (default) or json
+--format FORMAT    terminal (default), json, or sarif
 --severity LEVEL   minimum severity: critical, high, medium, low (default: low)
 --local PATH       scan local directory
 --org ORG          scan all repos in a GitHub org (requires GITHUB_TOKEN)
@@ -231,6 +234,7 @@ lib/
   formatter/
     terminal.rb                 # colored terminal output
     json.rb                     # JSON output
+    sarif.rb                    # SARIF output for GitHub Security tab
   rules/
     base.rb                     # abstract rule interface
     *.rb                        # one file per rule (26 rules)
@@ -269,7 +273,6 @@ Rules are auto-discovered from `lib/rules/`.
 
 - **Policy-as-code** -- `.sentinel-ci.yml` config for org-wide security standards. Define minimum requirements (SHA pinning mandatory, no self-hosted on public repos) and fail CI on violations.
 - **Supply chain graph** -- Map third-party action dependencies, maintainer risk, incident history. Risk scoring per action.
-- **SARIF output** -- Native SARIF format for GitHub Security tab integration alongside CodeQL findings.
 - **GitLab / Bitbucket CI** -- Same 28 rules applied to GitLab CI and Bitbucket Pipelines YAML.
 - **Pre-commit hook** -- `sentinel hook install` for instant feedback before commits touch workflow files.
 

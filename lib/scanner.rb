@@ -8,6 +8,7 @@ require_relative "auto_fix"
 require_relative "ai_fix"
 require_relative "formatter/terminal"
 require_relative "formatter/json"
+require_relative "formatter/sarif"
 
 class Scanner
     def initialize(client:, formatter:, min_severity: :low)

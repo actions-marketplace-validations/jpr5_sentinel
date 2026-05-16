@@ -12,7 +12,7 @@ parser = OptionParser.new do |opts|
     opts.separator "Scan GitHub Actions workflows for security issues."
     opts.separator ""
 
-    opts.on("--format FORMAT", %w[terminal json], "Output format: terminal (default) or json") do |f|
+    opts.on("--format FORMAT", %w[terminal json sarif], "Output format: terminal (default), json, or sarif") do |f|
         options[:format] = f
     end
 
@@ -96,6 +96,7 @@ end
 
 formatter = case options[:format]
 when "json"  then Formatter::Json.new
+when "sarif" then Formatter::Sarif.new
 else              Formatter::Terminal.new
 end
 
