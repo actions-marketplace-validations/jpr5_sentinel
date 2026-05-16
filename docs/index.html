@@ -1300,31 +1300,17 @@
         <div class="quickstart-grid">
           <div class="quickstart-card fade-in">
             <h3>Single repo</h3>
-            <pre><span class="comment-text"># Scan any public repo — no token needed</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan owner/repo</span>
-
-<span class="comment-text"># For private repos, set a token</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">export GITHUB_TOKEN=$(gh auth token)</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan owner/private-repo</span></pre>
+            <pre><span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan owner/repo</span></pre>
           </div>
 
           <div class="quickstart-card fade-in" style="transition-delay: 0.1s">
             <h3>Local checkout</h3>
-            <pre><span class="comment-text"># Scan a local directory</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --local .</span>
-
-<span class="comment-text"># Or a specific path</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --local /path/to/repo</span></pre>
+            <pre><span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --local .</span></pre>
           </div>
 
           <div class="quickstart-card fade-in" style="transition-delay: 0.2s">
             <h3>Entire org</h3>
-            <pre><span class="comment-text"># Scan every repo in an org</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --org my-org</span>
-
-<span class="comment-text"># JSON output, high+ severity only</span>
-<span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --org my-org \</span>
-  <span class="cmd-text">--format json --severity high</span></pre>
+            <pre><span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --org my-org</span></pre>
           </div>
         </div>
       </div>

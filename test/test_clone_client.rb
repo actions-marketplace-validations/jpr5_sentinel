@@ -87,15 +87,12 @@ class TestCloneClient < Minitest::Test
         end
     end
 
-    def test_clone_nonexistent_repo_returns_empty
-        # This test actually tries to clone — it should fail gracefully
-        # Use a repo name that definitely doesn't exist
+    def test_clone_nonexistent_repo_exits_with_error
         client = CloneClient.new
-        begin
-            result = client.fetch_workflows("nonexistent-owner-abc123/nonexistent-repo-xyz789")
-            assert_equal [], result
-        ensure
-            client.cleanup
+        assert_raises(SystemExit) do
+            client.fetch_workflows("nonexistent-owner-abc123/nonexistent-repo-xyz789")
         end
+    ensure
+        client.cleanup
     end
 end

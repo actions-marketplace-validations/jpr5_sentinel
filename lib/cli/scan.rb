@@ -60,19 +60,33 @@ elsif modes.length > 1
     exit 2
 end
 
+def resolve_token(options)
+    return options[:token] if options[:token]
+    return ENV["GITHUB_TOKEN"] if ENV["GITHUB_TOKEN"]
+
+    gh_path = `which gh 2>/dev/null`.strip
+    if !gh_path.empty? && system("gh", "auth", "status", [:out, :err] => File::NULL)
+        token = `gh auth token 2>/dev/null`.strip
+        return token unless token.empty?
+    end
+
+    nil
+end
+
+token = resolve_token(options)
+
 client = if options[:local]
     LocalClient.new(options[:local])
 elsif options[:org]
-    # Org scan always needs API (to list repos)
-    token = options[:token] || ENV["GITHUB_TOKEN"]
     unless token
-        $stderr.puts "Error: --org requires GITHUB_TOKEN (need API to list repos)"
+        $stderr.puts "Error: --org requires a GitHub token to list repos."
+        $stderr.puts ""
+        $stderr.puts "  export GITHUB_TOKEN=$(gh auth token)"
+        $stderr.puts "  sentinel scan --org #{options[:org]}"
         exit 2
     end
     GitHubClient.new(token: token)
 else
-    # Single repo — prefer clone (no auth needed for public repos)
-    token = options[:token] || ENV["GITHUB_TOKEN"]
     if token
         GitHubClient.new(token: token)
     else

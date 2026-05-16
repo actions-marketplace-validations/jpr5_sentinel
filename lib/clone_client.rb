@@ -25,8 +25,19 @@ class CloneClient
         )
 
         unless success
-            $stderr.puts "Failed to clone #{repo} — is it a private repo? Set GITHUB_TOKEN for private repos."
-            return []
+            $stderr.puts ""
+            $stderr.puts "ERROR: Could not access #{repo}"
+            $stderr.puts ""
+            $stderr.puts "This repo may be private. To scan private repos:"
+            $stderr.puts ""
+            $stderr.puts "  export GITHUB_TOKEN=$(gh auth token)"
+            $stderr.puts "  sentinel scan #{repo}"
+            $stderr.puts ""
+            $stderr.puts "Or pass a token directly:"
+            $stderr.puts ""
+            $stderr.puts "  sentinel scan --token ghp_xxx #{repo}"
+            $stderr.puts ""
+            exit 2
         end
 
         system(
