@@ -785,6 +785,46 @@
         font-style: italic;
       }
 
+      /* ─── Section: Coming Soon ─────────────────────────────────── */
+      .section-coming-soon {
+        padding: 4.5rem 0;
+        background: linear-gradient(
+          180deg,
+          var(--bg-deep) 0%,
+          var(--bg-surface) 50%,
+          var(--bg-deep) 100%
+        );
+      }
+      .section-coming-soon h2 {
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        text-align: center;
+        margin-bottom: 3.5rem;
+      }
+      .feature-card--upcoming {
+        opacity: 0.8;
+        position: relative;
+      }
+      .feature-card--upcoming:hover {
+        opacity: 1;
+      }
+      .coming-soon-badge {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        font-family: var(--font-mono);
+        font-size: 0.65rem;
+        font-weight: 600;
+        color: var(--accent);
+        background: var(--accent-glow);
+        border: 1px solid var(--accent-dim);
+        border-radius: 100px;
+        padding: 0.2rem 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
       /* ─── Buttons ────────────────────────────────────────────────── */
       .btn-primary {
         display: inline-flex;
@@ -1160,6 +1200,15 @@
               and <code>json</code>. Runs anywhere Ruby runs.
             </p>
           </div>
+
+          <div class="feature-card fade-in" style="transition-delay: 0.48s">
+            <div class="feature-icon">&#129693;</div>
+            <h3>Pre-commit Hook</h3>
+            <p>
+              Scan workflow files before every commit. Works standalone or
+              with husky/lefthook.
+            </p>
+          </div>
         </div>
       </div>
     </section>
@@ -1419,6 +1468,50 @@
           <div class="quickstart-card fade-in" style="transition-delay: 0.2s">
             <h3>Entire org</h3>
             <pre><span class="prompt-sign">$</span> <span class="cmd-text">sentinel scan --org my-org</span></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Section: Coming Soon ──────────────────────────────── -->
+    <section class="section-coming-soon" id="roadmap">
+      <div class="container">
+        <h2 class="fade-in">Coming Soon</h2>
+
+        <div class="feature-grid">
+          <div class="feature-card feature-card--upcoming fade-in">
+            <span class="coming-soon-badge">Coming Soon</span>
+            <div class="feature-icon">&#128274;</div>
+            <h3>Policy-as-code</h3>
+            <p>Define org-wide security standards in <code>.sentinel.yml</code></p>
+          </div>
+
+          <div class="feature-card feature-card--upcoming fade-in" style="transition-delay: 0.08s">
+            <span class="coming-soon-badge">Coming Soon</span>
+            <div class="feature-icon">&#128376;</div>
+            <h3>Supply Chain Graph</h3>
+            <p>Map action dependencies, maintainer risk, incident history</p>
+          </div>
+
+          <div class="feature-card feature-card--upcoming fade-in" style="transition-delay: 0.16s">
+            <span class="coming-soon-badge">Coming Soon</span>
+            <div class="feature-icon">&#128202;</div>
+            <h3>SARIF Output</h3>
+            <p>Native GitHub Security tab integration</p>
+          </div>
+
+          <div class="feature-card feature-card--upcoming fade-in" style="transition-delay: 0.24s">
+            <span class="coming-soon-badge">Coming Soon</span>
+            <div class="feature-icon">&#129418;</div>
+            <h3>GitLab + Bitbucket</h3>
+            <p>Same rules, different CI platforms</p>
+          </div>
+
+          <div class="feature-card feature-card--upcoming fade-in" style="transition-delay: 0.32s">
+            <span class="coming-soon-badge">Coming Soon</span>
+            <div class="feature-icon">&#129693;</div>
+            <h3>Pre-commit Hook</h3>
+            <p>Scan before you commit &mdash; <code>sentinel hook install</code></p>
           </div>
         </div>
       </div>
