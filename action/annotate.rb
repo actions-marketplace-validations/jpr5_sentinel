@@ -263,6 +263,37 @@ end
 
 findings = result["findings"] || []
 
+# Load policy if present
+policy_path = File.join(workspace, ".sentinel-ci.yml")
+if File.exist?(policy_path)
+    require "policy"
+    policy = Policy.new(policy_path)
+
+    if policy.errors.any?
+        policy.errors.each { |e| $stderr.puts "Policy error: #{e}" }
+    else
+        puts "Loaded policy from .sentinel-ci.yml"
+
+        # Filter findings per policy
+        findings.reject! { |f|
+            finding_obj = Finding.new(
+                rule: f["rule"], severity: f["severity"].to_sym,
+                file: f["file"], line: f["line"],
+                code: f["code"], message: f["message"], fix: f["fix"]
+            )
+
+            rule_sev = policy.rule_severity(f["rule"])
+            rule_sev == :off || policy.ignored?(f["file"]) || policy.excepted?(finding_obj)
+        }
+
+        # Apply severity overrides
+        findings.each do |f|
+            override = policy.rule_severity(f["rule"])
+            f["severity"] = override.to_s if override && override != :off
+        end
+    end
+end
+
 # Emit GitHub annotations
 findings.each do |f|
     level   = annotation_level(f["severity"])
