@@ -16,7 +16,7 @@ Gem::Specification.new do |s|
     }
 
     s.required_ruby_version = ">= 3.2"
-    s.files       = Dir["lib/**/*.rb", "bin/*", "LICENSE", "README.md", "CHANGELOG.md"]
+    s.files       = Dir["lib/**/*.rb", "mcp/**/*.rb", "mcp/**/*.json", "bin/*", "LICENSE", "README.md", "CHANGELOG.md"]
     s.executables = ["sentinel"]
 
     # Zero dependencies — pure stdlib

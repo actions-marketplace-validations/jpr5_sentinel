@@ -1,0 +1,17 @@
+{
+  "_comment": "Add one of these configurations to ~/.claude.json or .claude/settings.json",
+
+  "mcpServers": {
+    "sentinel-gem": {
+      "_comment": "If installed via: gem install sentinel-ci",
+      "command": "sentinel",
+      "args": ["mcp"]
+    },
+    "sentinel-local": {
+      "_comment": "If running from a local clone",
+      "command": "ruby",
+      "args": ["mcp/server.rb"],
+      "cwd": "/path/to/sentinel"
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 require_relative "../lib/version"
 
-SUBCOMMANDS = %w[scan fix deps bot hook version help].freeze
+SUBCOMMANDS = %w[scan fix deps bot hook mcp version help].freeze
 
 HELP_TEXT = <<~HELP
     Usage: sentinel <command> [options] [args]
@@ -13,6 +13,7 @@ HELP_TEXT = <<~HELP
         deps [REPO]           Map third-party action dependencies and risk factors
         bot                   Run the PR bot
         hook [install|uninstall|run]  Pre-commit hook for workflow file scanning
+        mcp                   Start MCP server (for AI coding agents)
         version               Print version
         help                  Show this help message
 
@@ -58,6 +59,9 @@ when "bot"
     require_relative "../lib/cli/bot"
 when "hook"
     require_relative "../lib/cli/hook"
+when "mcp"
+    require_relative "../mcp/server"
+    McpServer.new.run
 when "version"
     puts "sentinel #{Sentinel::VERSION}"
 when "help"

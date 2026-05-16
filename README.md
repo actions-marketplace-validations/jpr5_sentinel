@@ -200,6 +200,27 @@ ruby bot/scanner_bot.rb --pattern shell-injection --dry-run
 - Opt-out support, clear bot identity
 - Runs as daily cron via GitHub Actions
 
+## MCP Server
+
+Use Sentinel as a tool in AI coding agents (Claude Code, Copilot, Cursor):
+
+```bash
+# Start the MCP server
+sentinel mcp
+
+# Configure in Claude Code (~/.claude.json)
+{
+  "mcpServers": {
+    "sentinel": {
+      "command": "sentinel",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Three tools available: `sentinel_scan`, `sentinel_deps`, `sentinel_fix`.
+
 ## Supply Chain Analysis
 
 Map third-party action dependencies with risk scoring:
@@ -259,6 +280,9 @@ lib/
   rules/
     base.rb                     # abstract rule interface
     *.rb                        # one file per rule (27 rules)
+mcp/
+  server.rb                     # MCP server for AI coding agents
+  claude-code-config.json       # example configuration for Claude Code
 bot/
   scanner_bot.rb                # PR bot orchestrator
   search.rb                     # GitHub Code Search client
