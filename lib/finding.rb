@@ -5,7 +5,7 @@ class Finding
     SEVERITY_ORDER = SEVERITIES.each_with_index.to_h.freeze
 
     def <=>(other)
-        SEVERITY_ORDER[severity] <=> SEVERITY_ORDER[other.severity]
+        (SEVERITY_ORDER[severity] || 99) <=> (SEVERITY_ORDER[other.severity] || 99)
     end
 
     def critical? = severity == :critical
