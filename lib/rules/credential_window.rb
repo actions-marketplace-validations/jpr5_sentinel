@@ -17,7 +17,7 @@ module Rules
         steps.each_with_index do |step, i|
           run = step["run"]&.to_s
           if run&.match?(/git config.*insteadOf|git remote set-url/)
-            cred_step = i
+            cred_step = i if cred_step.nil?
           end
           if run&.match?(/git push/)
             push_step = i

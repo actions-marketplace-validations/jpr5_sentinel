@@ -11,10 +11,10 @@ module Rules
       return findings unless triggers.is_a?(Hash)
 
       %w[push pull_request].each do |trigger|
+        next unless triggers.key?(trigger)
         config = triggers[trigger]
-        next unless config
 
-        if config == true || config.nil? || (config.is_a?(Hash) && !config.key?("branches") && !config.key?("branches-ignore") && !config.key?("tags") && !config.key?("tags-ignore") && !config.key?("paths") && !config.key?("paths-ignore"))
+        if config.nil? || config == true || (config.is_a?(Hash) && !config.key?("branches") && !config.key?("branches-ignore") && !config.key?("tags") && !config.key?("tags-ignore") && !config.key?("paths") && !config.key?("paths-ignore"))
           line = workflow.line_of(/^\s+#{trigger}:/)
           findings << finding(workflow,
             line: line || 0,

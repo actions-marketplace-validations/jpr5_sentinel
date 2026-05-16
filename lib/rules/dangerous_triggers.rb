@@ -24,7 +24,8 @@ module Rules
           with = step["with"] || {}
           ref = with["ref"]&.to_s || ""
 
-          if ref.match?(/head|pull_request\.head/i)
+          if ref.match?(/\bgithub\.event\.pull_request\.head\b|\.head_ref\b|pull_request\.head\.sha/i) ||
+             ref.match?(/\$\{\{\s*github\.head_ref\s*\}\}/)
             line = workflow.line_of(/ref:.*head/i) || workflow.line_of(/checkout/)
             findings << finding(workflow,
               line: line || 0,

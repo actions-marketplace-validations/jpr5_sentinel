@@ -108,6 +108,22 @@ class TestOverlyBroadTriggers < Minitest::Test
         assert_operator pr_findings.length, :>=, 1
     end
 
+    def test_flags_bare_push_nil_config
+        yaml = <<~YAML
+          on:
+            push:
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - run: echo hi
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        push_findings = findings.select { |f| f.code&.include?("push") }
+        assert_operator push_findings.length, :>=, 1
+    end
+
     def test_rule_name
         assert_equal "overly-broad-triggers", @rule.name
     end

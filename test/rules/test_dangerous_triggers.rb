@@ -83,6 +83,22 @@ class TestDangerousTriggers < Minitest::Test
         assert_equal 1, findings.length
     end
 
+    def test_no_flag_refs_heads_branch_name
+        yaml = <<~YAML
+          on: pull_request_target
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    ref: refs/heads/main
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
     def test_rule_name
         assert_equal "dangerous-triggers", @rule.name
     end

@@ -68,6 +68,27 @@ class TestShellInjectionJq < Minitest::Test
         assert_equal 1, findings.length
     end
 
+    def test_flags_jq_with_multiple_flags_before_arg
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Build JSON
+                  run: jq -nc -r --arg title "${PR_TITLE}" '{title: $title}'
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
+    def test_no_flag_for_innocuous_var_with_attacker_substring
+        # AUTHOR_VERIFIED should not match just because it contains AUTHOR
+        assert_equal false, @rule.send(:potentially_attacker_controlled?, "AUTHOR_VERIFIED")
+        assert_equal false, @rule.send(:potentially_attacker_controlled?, "MY_BRANCH_DATA")
+    end
+
     def test_rule_name
         assert_equal "shell-injection-jq", @rule.name
     end

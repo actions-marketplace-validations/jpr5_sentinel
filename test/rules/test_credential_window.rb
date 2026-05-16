@@ -77,6 +77,30 @@ class TestCredentialWindow < Minitest::Test
         assert_empty findings
     end
 
+    def test_flags_first_cred_step_not_last
+        yaml = <<~YAML
+          on: push
+          jobs:
+            deploy:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: git config --global url."https://x-access-token:t1@github.com/".insteadOf "https://github.com/"
+                - run: echo step1
+                - run: echo step2
+                - run: echo step3
+                - run: echo step4
+                - run: echo step5
+                - run: echo step6
+                - run: git config --global url."https://x-access-token:t2@github.com/".insteadOf "https://github.com/"
+                - run: git push origin main
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+        assert_match(/steps before push/, findings.first.message)
+    end
+
     def test_rule_name
         assert_equal "credential-window", @rule.name
     end

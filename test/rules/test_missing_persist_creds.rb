@@ -91,6 +91,20 @@ class TestMissingPersistCreds < Minitest::Test
         assert_equal 2, findings.length
     end
 
+    def test_no_flag_for_non_actions_checkout
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: some-org/checkout-helper@v1
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
     def test_rule_name
         assert_equal "missing-persist-credentials", @rule.name
     end

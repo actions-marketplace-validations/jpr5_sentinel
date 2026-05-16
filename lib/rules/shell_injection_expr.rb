@@ -48,6 +48,7 @@ module Rules
       (target_line - 1).downto([target_line - 20, 0].max) do |i|
         content = workflow.raw_lines[i]
         return true if content&.match?(/^\s+run:\s*[\|>]?\s*$/) || content&.match?(/^\s+run:\s+\S/)
+        return true if content&.match?(/^\s+-\s+run:\s*[\|>]?\s*$/) || content&.match?(/^\s+-\s+run:\s+\S/)
         return false if content&.match?(/^\s+(uses|with|if|id|name|env):/) || content&.match?(/^\s+-\s+name:/)
       end
       false

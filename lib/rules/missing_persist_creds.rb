@@ -12,7 +12,7 @@ module Rules
         job_pushes = job_does_push?(job, workflow)
 
         workflow.steps(job).each do |step|
-          next unless step["uses"]&.include?("checkout")
+          next unless step["uses"]&.match?(/actions\/checkout[@\s]|actions\/checkout$/)
 
           with = step["with"] || {}
           persist = with["persist-credentials"]

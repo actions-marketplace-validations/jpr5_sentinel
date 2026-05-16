@@ -4,8 +4,8 @@ module Rules
         def description = "Remote script piped directly to shell without integrity check"
         def severity = :high
 
-        PIPE_PATTERN = /curl\s.*\|\s*(sh|bash|zsh|source|\.)/
-        WGET_PIPE = /wget\s.*-O\s*-\s*\|\s*(sh|bash|zsh)/
+        PIPE_PATTERN = /curl\s.*\|\s*(sudo\s+)?(sh|bash|zsh|source|\.)/
+        WGET_PIPE = /wget\s.*-O\s*-\s*\|\s*(sudo\s+)?(sh|bash|zsh)/
 
         def check(workflow)
             findings = []

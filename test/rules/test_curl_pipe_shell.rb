@@ -83,6 +83,36 @@ class TestCurlPipeShell < Minitest::Test
         assert_empty findings
     end
 
+    def test_flags_curl_pipe_sudo_sh
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Install
+                  run: curl -fsSL https://example.com/install.sh | sudo sh
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
+    def test_flags_curl_pipe_sudo_bash
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Install
+                  run: curl -fsSL https://example.com/install.sh | sudo bash
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
     def test_rule_name
         assert_equal "curl-pipe-shell", @rule.name
     end

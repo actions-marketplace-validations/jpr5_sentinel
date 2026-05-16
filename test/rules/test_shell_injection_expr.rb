@@ -149,6 +149,20 @@ class TestShellInjectionExpr < Minitest::Test
         assert_equal 1, findings.length
     end
 
+    def test_flags_inline_run_without_name
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - run: echo "${{ github.event.pull_request.title }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
     def test_rule_name
         assert_equal "shell-injection-expr", @rule.name
     end

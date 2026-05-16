@@ -9,10 +9,8 @@ module Rules
       PR_HEAD_REF BRANCH_NAME
     ].freeze
 
-    JQ_PATTERN = /jq\s+(-n\s+)?--arg\s+\w+\s+"[^"]*\$\{/
+    JQ_PATTERN = /jq\s+([a-zA-Z-]+\s+)*--arg\s+\w+\s+"[^"]*\$\{/
     CURL_JSON_PATTERN = /curl\s.*-d\s+"[^"]*\$\{/
-    HEREDOC_JSON_PATTERN = /"\$\{(#{ATTACKER_ENV_VARS.join('|')})\}"/
-
     def check(workflow)
       findings = []
 
@@ -54,8 +52,8 @@ module Rules
     private
 
     def potentially_attacker_controlled?(var_name)
-      ATTACKER_ENV_VARS.any? { |v| var_name.upcase.include?(v) } ||
-        var_name.match?(/TITLE|BODY|HEAD_REF|BRANCH|COMMENT|AUTHOR/i)
+      ATTACKER_ENV_VARS.any? { |v| var_name.upcase == v } ||
+        var_name.match?(/^(PR_|ISSUE_|COMMENT_)?(TITLE|BODY|HEAD_REF|BRANCH_NAME|COMMENT_BODY|AUTHOR)$/i)
     end
   end
 end
