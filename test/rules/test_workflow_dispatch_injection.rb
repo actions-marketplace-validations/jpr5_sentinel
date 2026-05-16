@@ -69,6 +69,28 @@ class TestWorkflowDispatchInjection < Minitest::Test
         assert_empty findings
     end
 
+    def test_flags_input_in_run_block_after_env_block
+        yaml = <<~YAML
+          on:
+            workflow_dispatch:
+              inputs:
+                name:
+                  description: "Name"
+          jobs:
+            greet:
+              runs-on: ubuntu-latest
+              steps:
+                - env:
+                    FOO: bar
+                  run: |
+                    echo "Hello ${{ inputs.name }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+        assert_match(/inputs\.name/, findings.first.message)
+    end
+
     def test_safe_in_with_block
         yaml = <<~YAML
           on:

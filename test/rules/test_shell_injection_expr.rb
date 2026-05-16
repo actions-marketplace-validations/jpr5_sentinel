@@ -163,6 +163,41 @@ class TestShellInjectionExpr < Minitest::Test
         assert_equal 1, findings.length
     end
 
+    def test_flags_expr_in_run_block_after_env_block
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - env:
+                    FOO: bar
+                  run: |
+                    echo "${{ github.event.pull_request.title }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+        assert_match(/pull_request\.title/, findings.first.message)
+    end
+
+    def test_no_flag_expr_inside_env_block_before_run
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - run: |
+                    echo "hello"
+                  env:
+                    TITLE: ${{ github.event.pull_request.title }}
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
     def test_rule_name
         assert_equal "shell-injection-expr", @rule.name
     end

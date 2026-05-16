@@ -18,14 +18,21 @@ module Rules
         return findings
       end
 
+      runs_on_lines = workflow.lines_of(/runs-on:/)
+      runs_on_idx = 0
+
       workflow.jobs.each do |job_id, job|
         runs_on = job["runs-on"]
         next unless runs_on
 
         runs_on_str = runs_on.is_a?(Array) ? runs_on.join(", ") : runs_on.to_s
+
+        # Advance through runs-on lines for each job regardless of self-hosted
+        line = runs_on_lines[runs_on_idx]
+        runs_on_idx += 1
+
         next unless runs_on_str.include?("self-hosted")
 
-        line = workflow.line_of(/runs-on:.*self-hosted/) || workflow.line_of(/self-hosted/)
         findings << finding(workflow,
           line: line || 0,
           code: "runs-on: #{runs_on_str}",
