@@ -5,6 +5,7 @@ RUN apk add --no-cache git
 COPY lib/ /scanner/lib/
 COPY bin/ /scanner/bin/
 COPY action/annotate.rb /scanner/action/annotate.rb
+COPY bot/ /scanner/bot/
 
 RUN chmod +x /scanner/bin/sentinel /scanner/action/annotate.rb
 
