@@ -1,0 +1,28 @@
+# Sentinel CI security policy
+# https://sentinel.copilotkit.dev
+
+severity: high
+
+rules:
+  missing-timeouts: medium
+  overly-broad-triggers: off
+
+policy:
+  require:
+    - sha-pinned-actions
+    - persist-credentials-false
+    - permissions-block
+    - no-self-hosted-public
+
+  recommend:
+    - timeout-minutes
+    - frozen-lockfile
+    - environment-protection
+
+ignore:
+  - ".github/workflows/dependabot-*.yml"
+
+exceptions:
+  - rule: credential-window
+    file: publish-release.yml
+    reason: "Intentional late-injection pattern — all steps between config and push need credentials"
