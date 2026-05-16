@@ -15,7 +15,7 @@ Gem::Specification.new do |s|
         "homepage_uri"    => "https://sentinel.copilotkit.dev",
     }
 
-    s.required_ruby_version = ">= 3.1"
+    s.required_ruby_version = ">= 3.2"
     s.files       = Dir["lib/**/*.rb", "bin/*", "LICENSE", "README.md"]
     s.executables = ["sentinel"]
 

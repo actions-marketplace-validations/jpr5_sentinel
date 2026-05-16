@@ -4,7 +4,7 @@
 
 <!-- badges -->
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Ruby](https://img.shields.io/badge/ruby-3.1%2B-red)
+![Ruby](https://img.shields.io/badge/ruby-3.2%2B-red)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 Scan GitHub Actions workflows for 21 security vulnerabilities. No AI, no gems -- pure Ruby stdlib.
@@ -14,12 +14,21 @@ Documentation: https://sentinel.copilotkit.dev
 ## Install
 
 ```bash
-git clone https://github.com/jpr5/gh-workflow-scanner.git
-cd gh-workflow-scanner
-export GITHUB_TOKEN=$(gh auth token)  # or set manually
+# One-shot (like npx — Ruby 3.2+)
+gem exec sentinel-ci scan owner/repo
+
+# Or install globally
+gem install sentinel-ci
+sentinel scan owner/repo
+
+# Or clone and run directly
+git clone https://github.com/CopilotKit/sentinel.git
+cd sentinel
+export GITHUB_TOKEN=$(gh auth token)
+bin/sentinel scan owner/repo
 ```
 
-Requires Ruby 3.1+. No dependencies beyond stdlib (`yaml`, `net/http`, `optparse`, `json`).
+Requires Ruby 3.2+. No dependencies beyond stdlib (`yaml`, `net/http`, `optparse`, `json`).
 
 ## Usage
 
