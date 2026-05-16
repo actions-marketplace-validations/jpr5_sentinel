@@ -267,7 +267,7 @@ Rules are auto-discovered from `lib/rules/`.
 
 ## Roadmap
 
-- **Policy-as-code** -- `.sentinel.yml` config for org-wide security standards. Define minimum requirements (SHA pinning mandatory, no self-hosted on public repos) and fail CI on violations.
+- **Policy-as-code** -- `.sentinel-ci.yml` config for org-wide security standards. Define minimum requirements (SHA pinning mandatory, no self-hosted on public repos) and fail CI on violations.
 - **Supply chain graph** -- Map third-party action dependencies, maintainer risk, incident history. Risk scoring per action.
 - **SARIF output** -- Native SARIF format for GitHub Security tab integration alongside CodeQL findings.
 - **GitLab / Bitbucket CI** -- Same 28 rules applied to GitLab CI and Bitbucket Pipelines YAML.

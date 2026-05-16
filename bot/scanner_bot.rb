@@ -221,7 +221,7 @@ module Bot
 
             To stop receiving PRs from this bot:
             - Close this PR (we won't re-open for this rule)
-            - Or add `.github/workflow-scanner.yml` with `enabled: false`
+            - Or add `.github/.sentinel-ci.yml` with `enabled: false`
 
             ---
             *[sentinel](https://github.com/jpr5/sentinel) | [Report false positive](https://github.com/jpr5/sentinel/issues)*

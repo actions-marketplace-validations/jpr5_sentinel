@@ -13,7 +13,7 @@ module Bot
             { pattern: "dangerous-triggers", query: 'pull_request_target checkout path:.github/workflows language:YAML' },
         ].freeze
 
-        OPT_OUT_FILE = ".github/workflow-scanner.yml"
+        OPT_OUT_FILE = ".github/.sentinel-ci.yml"
         STATE_FILE = "bot/state.json"
     end
 end
