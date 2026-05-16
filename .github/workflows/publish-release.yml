@@ -34,6 +34,17 @@ jobs:
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check changelog has entry for version
+        if: steps.check.outputs.published == 'false'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          if ! grep -q "## ${VERSION}" CHANGELOG.md; then
+            echo "ERROR: CHANGELOG.md has no entry for version ${VERSION}"
+            echo "Add a '## ${VERSION}' section before releasing."
+            exit 1
+          fi
+
       - name: Run tests
         if: steps.check.outputs.published == 'false'
         run: rake test
