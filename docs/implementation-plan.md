@@ -33,4 +33,4 @@
 - Calibrate rules
 
 ## Task 9: Create GitHub repo
-- Push to CopilotKit/sentinel
+- Push to jpr5/sentinel

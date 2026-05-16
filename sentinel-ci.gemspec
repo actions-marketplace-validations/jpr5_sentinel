@@ -10,8 +10,8 @@ Gem::Specification.new do |s|
     s.homepage    = "https://sentinel.copilotkit.dev"
     s.license     = "MIT"
     s.metadata    = {
-        "source_code_uri" => "https://github.com/CopilotKit/sentinel",
-        "bug_tracker_uri" => "https://github.com/CopilotKit/sentinel/issues",
+        "source_code_uri" => "https://github.com/jpr5/sentinel",
+        "bug_tracker_uri" => "https://github.com/jpr5/sentinel/issues",
         "homepage_uri"    => "https://sentinel.copilotkit.dev",
     }
 
