@@ -7,7 +7,7 @@
 ![Ruby](https://img.shields.io/badge/ruby-3.2%2B-red)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-Scan GitHub Actions workflows for 28 security vulnerabilities. No AI, no gems -- pure Ruby stdlib.
+Scan GitHub Actions workflows for 28 security vulnerabilities. Optional AI-powered remediation via Claude. Pure Ruby stdlib.
 
 Documentation: https://sentinel.copilotkit.dev
 
@@ -93,6 +93,34 @@ jobs:
 
 Findings appear as inline annotations on the PR diff -- critical/high as errors,
 medium as warnings, low as notices.
+
+## Pre-commit Hook
+
+Scan workflow files automatically before every commit:
+
+```bash
+# Auto-install
+sentinel hook install
+
+# Manual removal
+sentinel hook uninstall
+```
+
+Works with hook managers too:
+
+```bash
+# husky
+echo 'sentinel hook run' >> .husky/pre-commit
+
+# lefthook (lefthook.yml)
+pre-commit:
+  commands:
+    sentinel:
+      glob: ".github/workflows/*.{yml,yaml}"
+      run: sentinel hook run
+```
+
+The hook only runs when `.github/workflows/*.yml` files are staged, so it won't slow down unrelated commits.
 
 ## What It Checks
 

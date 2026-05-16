@@ -4,7 +4,7 @@ Gem::Specification.new do |s|
     s.summary     = "Deterministic security scanner for GitHub Actions workflows"
     s.description = "Scan GitHub Actions workflows for 28 security vulnerabilities. " \
                     "SHA pinning, shell injection, credential exposure, dangerous triggers. " \
-                    "No AI, no dependencies — pure Ruby stdlib."
+                    "Optional AI-powered remediation via Claude. Pure Ruby stdlib."
     s.authors     = ["Jordan Ritter"]
     s.email       = "jpr5@darkridge.com"
     s.homepage    = "https://sentinel.copilotkit.dev"

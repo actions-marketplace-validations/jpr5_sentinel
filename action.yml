@@ -1,5 +1,5 @@
 name: 'Workflow Security Scanner'
-description: 'Scan GitHub Actions workflows for 21 security vulnerabilities. No AI -- deterministic pattern matching.'
+description: 'Scan GitHub Actions workflows for 28 security vulnerabilities -- deterministic pattern matching.'
 author: 'jpr5'
 
 inputs:
