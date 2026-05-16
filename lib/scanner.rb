@@ -7,59 +7,89 @@ require_relative "clone_client"
 require_relative "auto_fix"
 require_relative "ai_fix"
 require_relative "policy"
+begin; require_relative "platforms/shared_patterns"; rescue LoadError; end
+begin; require_relative "platforms/gitlab"; rescue LoadError; end
+begin; require_relative "platforms/bitbucket"; rescue LoadError; end
 require_relative "formatter/terminal"
 require_relative "formatter/json"
 require_relative "formatter/sarif"
 
 class Scanner
-    def initialize(client:, formatter:, min_severity: :low, policy: nil)
+    PLATFORM_OPTIONS = %i[auto github gitlab bitbucket].freeze
+
+    def initialize(client:, formatter:, min_severity: :low, policy: nil, platform: :auto)
         @client = client
         @formatter = formatter
         @min_severity = min_severity
         @policy = policy || Policy.new
+        @platform = platform
         @engine = RuleEngine.new
     end
 
     def scan(repo)
-        raw_workflows = @client.fetch_workflows(repo)
-
-        workflows = raw_workflows.map { |w|
-            Workflow.new(filename: w[:filename], content: w[:content])
-        }
-
-        dependabot = @client.fetch_dependabot_config(repo)
-        has_zizmor = workflows.any? { |w| w.filename.match?(/zizmor/i) }
-        has_dependabot_actions = dependabot_has_actions?(dependabot)
-
         findings = []
+        workflow_count = 0
 
-        workflows.each do |wf|
-            next if wf.parse_error?
-            findings.concat(@engine.scan(wf))
+        # Scan GitHub Actions workflows (unless platform explicitly excludes it)
+        if scan_github?
+            raw_workflows = @client.fetch_workflows(repo)
+
+            workflows = raw_workflows.map { |w|
+                Workflow.new(filename: w[:filename], content: w[:content])
+            }
+
+            workflow_count = workflows.length
+
+            dependabot = @client.fetch_dependabot_config(repo)
+            has_zizmor = workflows.any? { |w| w.filename.match?(/zizmor/i) }
+            has_dependabot_actions = dependabot_has_actions?(dependabot)
+
+            workflows.each do |wf|
+                next if wf.parse_error?
+                findings.concat(@engine.scan(wf))
+            end
+
+            unless has_dependabot_actions
+                findings << Finding.new(
+                    rule: "missing-dependabot",
+                    severity: :low,
+                    file: "dependabot.yml",
+                    line: 0,
+                    code: nil,
+                    message: "No Dependabot configuration for github-actions ecosystem",
+                    fix: "Add package-ecosystem: github-actions to .github/dependabot.yml"
+                )
+            end
+
+            unless has_zizmor
+                findings << Finding.new(
+                    rule: "missing-zizmor",
+                    severity: :low,
+                    file: "(missing)",
+                    line: 0,
+                    code: nil,
+                    message: "No zizmor static analysis workflow found",
+                    fix: "Add a security_zizmor.yml workflow for GitHub Actions static analysis"
+                )
+            end
         end
 
-        unless has_dependabot_actions
-            findings << Finding.new(
-                rule: "missing-dependabot",
-                severity: :low,
-                file: "dependabot.yml",
-                line: 0,
-                code: nil,
-                message: "No Dependabot configuration for github-actions ecosystem",
-                fix: "Add package-ecosystem: github-actions to .github/dependabot.yml"
-            )
-        end
+        # Scan GitLab/Bitbucket platform configs when client supports it
+        if @client.respond_to?(:fetch_platform_configs)
+            platform_configs = @client.fetch_platform_configs
 
-        unless has_zizmor
-            findings << Finding.new(
-                rule: "missing-zizmor",
-                severity: :low,
-                file: "(missing)",
-                line: 0,
-                code: nil,
-                message: "No zizmor static analysis workflow found",
-                fix: "Add a security_zizmor.yml workflow for GitHub Actions static analysis"
-            )
+            platform_configs.each do |config|
+                next unless scan_platform?(config[:platform])
+
+                platform_scanner = case config[:platform]
+                when :gitlab
+                    defined?(Platforms::GitLab) ? Platforms::GitLab.new(config[:content], filename: config[:filename]) : nil
+                when :bitbucket
+                    defined?(Platforms::Bitbucket) ? Platforms::Bitbucket.new(config[:content], filename: config[:filename]) : nil
+                end
+
+                findings.concat(platform_scanner.scan) if platform_scanner
+            end
         end
 
         findings.select! { |f| severity_passes?(f.severity) }
@@ -90,11 +120,11 @@ class Scanner
 
         output = @formatter.format(
             repo: repo,
-            workflow_count: workflows.length,
+            workflow_count: workflow_count,
             findings: findings
         )
 
-        { output: output, findings: findings, workflow_count: workflows.length }
+        { output: output, findings: findings, workflow_count: workflow_count }
     end
 
     def scan_org(org)
@@ -120,5 +150,13 @@ class Scanner
 
     def severity_passes?(sev)
         (Finding::SEVERITY_ORDER[sev] || 99) <= (Finding::SEVERITY_ORDER[@min_severity] || 99)
+    end
+
+    def scan_github?
+        @platform == :auto || @platform == :github
+    end
+
+    def scan_platform?(platform)
+        @platform == :auto || @platform == platform
     end
 end
