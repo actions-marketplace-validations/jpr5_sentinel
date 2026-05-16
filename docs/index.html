@@ -1,0 +1,1576 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Redirect /index.html to clean URL -->
+    <script>
+      if (window.location.pathname.endsWith("/index.html")) {
+        window.history.replaceState(null, "", "/");
+      }
+    </script>
+    <title>sentinel — Deterministic security scanner for GitHub Actions workflows</title>
+    <meta
+      name="description"
+      content="Deterministic pattern matching against 21 security dimensions. SHA pinning, shell injection, credential exposure, dangerous triggers — everything your workflows need auditing for."
+    />
+
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://sentinel.copilotkit.dev/" />
+    <meta property="og:title" content="sentinel — Deterministic security scanner for GitHub Actions workflows" />
+    <meta
+      property="og:description"
+      content="21 security rules. No AI, no gems, pure Ruby. Find CI vulnerabilities before attackers do."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="sentinel — Find CI vulnerabilities before attackers do" />
+    <meta
+      name="twitter:description"
+      content="Deterministic pattern matching against 21 security dimensions. No AI, no gems, pure Ruby."
+    />
+
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Instrument+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* ─── Reset & Variables ───────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg-deep: #0a0a0f;
+        --bg-surface: #111118;
+        --bg-card: #16161f;
+        --bg-card-hover: #1c1c28;
+        --border: #2a2a3a;
+        --border-bright: #3a3a50;
+        --text-primary: #e8e8f0;
+        --text-secondary: #8888a0;
+        --text-dim: #555570;
+        --accent: #ff8800;
+        --accent-dim: #cc6d00;
+        --accent-glow: rgba(255, 136, 0, 0.15);
+        --accent-glow-strong: rgba(255, 136, 0, 0.3);
+        --warning: #ffaa00;
+        --error: #ff4466;
+        --blue: #4488ff;
+        --purple: #aa66ff;
+        --cyan: #22d3ee;
+        --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+        --font-features-mono: "liga" 0, "calt" 0;
+        --font-sans: "Instrument Sans", -apple-system, system-ui, sans-serif;
+        --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      html {
+        font-size: 16px;
+        scroll-behavior: smooth;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      body {
+        font-family: var(--font-sans);
+        background: var(--bg-deep);
+        color: var(--text-primary);
+        line-height: 1.6;
+        overflow-x: hidden;
+      }
+
+      code,
+      pre,
+      kbd {
+        font-feature-settings: var(--font-features-mono);
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+
+      /* ─── Noise Overlay ──────────────────────────────────────────── */
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+        pointer-events: none;
+        z-index: 9999;
+      }
+
+      /* ─── Layout ─────────────────────────────────────────────────── */
+      .container {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 2rem;
+      }
+
+      /* ─── Nav ────────────────────────────────────────────────────── */
+      nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        padding: 1rem 0;
+        background: rgba(10, 10, 15, 0.85);
+        backdrop-filter: blur(20px) saturate(1.4);
+        -webkit-backdrop-filter: blur(20px) saturate(1.4);
+        border-bottom: 1px solid var(--border);
+      }
+      nav .container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .nav-brand {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        font-family: var(--font-mono);
+        font-weight: 600;
+        font-size: 1rem;
+        color: var(--text-primary);
+      }
+      .nav-brand .brand-main {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .nav-brand .prompt {
+        color: var(--accent);
+      }
+      .nav-brand .powered-by {
+        font-size: 0.6rem;
+        font-weight: 400;
+        color: var(--text-dim);
+        padding-left: 1.5rem;
+        margin-top: -2px;
+      }
+      .nav-brand .powered-by a {
+        color: var(--text-dim);
+        transition: color 0.2s;
+      }
+      .nav-brand .powered-by a:hover {
+        color: var(--text-secondary);
+        text-decoration: none;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 2rem;
+        list-style: none;
+      }
+      .nav-links a {
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: color 0.2s;
+      }
+      .nav-links a:hover {
+        color: var(--text-primary);
+        text-decoration: none;
+      }
+      .nav-links .gh-link {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 1rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        transition:
+          border-color 0.2s,
+          background 0.2s;
+      }
+      .nav-links .gh-link:hover {
+        border-color: var(--border-bright);
+        background: var(--bg-card);
+      }
+
+      /* ─── Animations ─────────────────────────────────────────────── */
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0;
+        }
+      }
+
+      .fade-in {
+        opacity: 0;
+        transform: translateY(30px);
+        transition:
+          opacity 0.8s var(--ease-out-expo),
+          transform 0.8s var(--ease-out-expo);
+      }
+      .fade-in.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      /* ─── Hero ───────────────────────────────────────────────────── */
+      .hero {
+        padding: 120px 0 3rem;
+        position: relative;
+        overflow: hidden;
+      }
+      .hero::before {
+        content: "";
+        position: absolute;
+        top: -200px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 800px;
+        height: 600px;
+        background: radial-gradient(ellipse, var(--accent-glow) 0%, transparent 70%);
+        pointer-events: none;
+      }
+      .hero .container {
+        position: relative;
+        z-index: 1;
+      }
+      .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.35rem 1rem;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 100px;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-bottom: 2rem;
+        animation: fadeUp 0.8s var(--ease-out-expo) both;
+      }
+      .hero-badge .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 8px var(--accent);
+        animation: pulse 2s infinite;
+      }
+      .hero h1 {
+        font-family: var(--font-sans);
+        font-size: clamp(2.5rem, 6vw, 4.5rem);
+        font-weight: 700;
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        max-width: 780px;
+        animation: fadeUp 0.8s var(--ease-out-expo) 0.1s both;
+      }
+      .hero h1 .highlight {
+        color: var(--accent);
+        position: relative;
+      }
+      .hero-sub {
+        font-size: 1.2rem;
+        color: var(--text-secondary);
+        max-width: 640px;
+        margin-top: 1.5rem;
+        line-height: 1.7;
+        animation: fadeUp 0.8s var(--ease-out-expo) 0.2s both;
+      }
+
+      /* ─── Install Box ────────────────────────────────────────────── */
+      .install-box {
+        display: inline-flex;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 2.5rem;
+        padding: 0.75rem 1rem 0.75rem 1.25rem;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        font-family: var(--font-mono);
+        font-size: 0.9rem;
+        animation: fadeUp 0.8s var(--ease-out-expo) 0.3s both;
+      }
+      .install-box .prompt-sign {
+        color: var(--accent);
+        user-select: none;
+      }
+      .install-box code {
+        color: var(--text-primary);
+      }
+      .install-box .copy-btn {
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text-secondary);
+        padding: 0.35rem 0.75rem;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .install-box .copy-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .install-box.install-box--multi {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.25rem;
+        padding: 0.75rem 1.25rem;
+        max-width: 100%;
+      }
+      .install-box--multi .run-cmd {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+      .install-box--multi .run-cmd code {
+        overflow-x: auto;
+        flex: 1;
+        white-space: nowrap;
+      }
+      .install-box--multi .run-or {
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        text-align: center;
+        padding: 0.25rem 0;
+        user-select: none;
+      }
+      .install-secondary {
+        margin-top: 1rem;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        animation: fadeUp 0.8s var(--ease-out-expo) 0.35s both;
+      }
+      .install-secondary code {
+        font-family: var(--font-mono);
+        color: var(--text-primary);
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.15rem 0.45rem;
+        font-size: 0.85em;
+      }
+
+      /* ─── Demo Panels ────────────────────────────────────────────── */
+      .demo-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        margin-top: 3.5rem;
+        animation: fadeUp 0.8s var(--ease-out-expo) 0.4s both;
+      }
+      .demo-panel {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow:
+          0 8px 32px rgba(0, 0, 0, 0.4),
+          0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+      .demo-titlebar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: rgba(0, 0, 0, 0.3);
+        border-bottom: 1px solid var(--border);
+      }
+      .demo-titlebar .dots {
+        display: flex;
+        gap: 6px;
+      }
+      .demo-titlebar .dots span {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      .demo-titlebar .dots span:nth-child(1) {
+        background: #ff5f57;
+      }
+      .demo-titlebar .dots span:nth-child(2) {
+        background: #ffbd2e;
+      }
+      .demo-titlebar .dots span:nth-child(3) {
+        background: #28ca42;
+      }
+      .demo-titlebar .title {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--text-dim);
+        margin-left: 0.5rem;
+      }
+      .demo-body {
+        padding: 1.25rem;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        line-height: 1.7;
+        overflow-x: auto;
+      }
+
+      /* ─── Syntax Highlighting ────────────────────────────────────── */
+      .syn-key {
+        color: #88aaff;
+      }
+      .syn-str {
+        color: #66ddaa;
+      }
+      .syn-num {
+        color: #ffaa66;
+      }
+      .syn-bool {
+        color: #ff88aa;
+      }
+      .syn-bracket {
+        color: var(--text-dim);
+      }
+      .syn-comment {
+        color: var(--text-dim);
+        font-style: italic;
+      }
+
+      /* ─── Terminal Colors ────────────────────────────────────────── */
+      .t-green {
+        color: var(--accent);
+      }
+      .t-yellow {
+        color: var(--warning);
+      }
+      .t-red {
+        color: var(--error);
+      }
+      .t-blue {
+        color: var(--blue);
+      }
+      .t-dim {
+        color: var(--text-dim);
+      }
+      .t-purple {
+        color: var(--purple);
+      }
+      .t-cyan {
+        color: var(--cyan);
+      }
+
+      /* ─── Terminal Demo Animation ────────────────────────────────── */
+      .demo-term {
+        padding: 1.25rem;
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        line-height: 1.75;
+        height: 380px;
+        overflow: hidden;
+      }
+      .demo-term .line {
+        opacity: 0;
+        transform: translateX(-6px);
+        white-space: nowrap;
+      }
+      .demo-term .line.visible {
+        opacity: 1;
+        transform: translateX(0);
+        transition:
+          opacity 0.25s ease,
+          transform 0.25s ease;
+      }
+      .demo-term .prompt-sym {
+        color: var(--accent);
+        user-select: none;
+      }
+      .demo-term .cmd {
+        color: var(--text-primary);
+      }
+      .demo-term .info {
+        color: var(--text-dim);
+      }
+      .demo-term .ok {
+        color: var(--accent);
+      }
+      .demo-term .req {
+        color: var(--warning);
+      }
+      .demo-term .match {
+        color: var(--purple);
+      }
+      .demo-term .cursor {
+        display: inline-block;
+        width: 7px;
+        height: 14px;
+        background: var(--accent);
+        animation: blink 1s step-end infinite;
+        vertical-align: text-bottom;
+        margin-left: 1px;
+      }
+
+      /* ─── Section: Feature Grid ──────────────────────────────────── */
+      .section-features {
+        padding: 4.5rem 0;
+        background: linear-gradient(
+          180deg,
+          var(--bg-deep) 0%,
+          var(--bg-surface) 50%,
+          var(--bg-deep) 100%
+        );
+      }
+      .section-features h2 {
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        text-align: center;
+        margin-bottom: 3.5rem;
+      }
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+      }
+      .feature-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        transition: all 0.3s var(--ease-out-expo);
+      }
+      .feature-card:hover {
+        transform: translateY(-4px);
+        border-color: var(--border-bright);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      }
+      .feature-card .feature-icon {
+        font-size: 1.75rem;
+        margin-bottom: 1rem;
+      }
+      .feature-card h3 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+      }
+      .feature-card p {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        line-height: 1.6;
+      }
+
+      /* ─── Section: Rules Table ───────────────────────────────────── */
+      .section-rules {
+        padding: 4.5rem 0;
+        position: relative;
+        background: linear-gradient(
+          180deg,
+          var(--bg-deep) 0%,
+          #0d1220 30%,
+          #0d1220 70%,
+          var(--bg-deep) 100%
+        );
+      }
+      .section-rules .container {
+        position: relative;
+        z-index: 1;
+      }
+      .section-rules h2 {
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        text-align: center;
+        margin-bottom: 1rem;
+      }
+      .rules-sub {
+        text-align: center;
+        color: var(--text-secondary);
+        font-size: 1.05rem;
+        max-width: 640px;
+        margin: 0 auto 3rem;
+        line-height: 1.7;
+      }
+      .rules-wrap {
+        -webkit-overflow-scrolling: touch;
+        overflow-x: auto;
+      }
+      .rules-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.85rem;
+      }
+      .rules-table thead th {
+        position: sticky;
+        top: 57px;
+        z-index: 10;
+        padding: 0.75rem 1rem;
+        background: #0d1220;
+        border-bottom: 2px solid var(--accent);
+        font-weight: 600;
+        text-align: left;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        color: var(--accent);
+        white-space: nowrap;
+      }
+      .rules-table tbody td {
+        padding: 0.6rem 1rem;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-secondary);
+      }
+      .rules-table tbody td:first-child {
+        font-family: var(--font-mono);
+        color: var(--text-dim);
+        text-align: center;
+        width: 3rem;
+      }
+      .rules-table tbody td:nth-child(2) {
+        font-family: var(--font-mono);
+        color: var(--text-primary);
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .rules-table tbody tr:hover td {
+        background: var(--bg-card-hover);
+      }
+      .sev-critical {
+        color: var(--error);
+        font-weight: 600;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+      }
+      .sev-high {
+        color: var(--warning);
+        font-weight: 600;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+      }
+      .sev-medium {
+        color: var(--cyan);
+        font-weight: 500;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+      }
+      .sev-low {
+        color: var(--text-dim);
+        font-weight: 500;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+      }
+
+      /* ─── Section: Quick Start ───────────────────────────────────── */
+      .section-quickstart {
+        padding: 4.5rem 0;
+      }
+      .section-quickstart h2 {
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        text-align: center;
+        margin-bottom: 3.5rem;
+      }
+      .quickstart-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+      }
+      .quickstart-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.75rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+      }
+      .quickstart-card h3 {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+      }
+      .quickstart-card pre {
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        line-height: 1.7;
+        color: var(--text-secondary);
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1rem;
+        overflow-x: auto;
+      }
+      .quickstart-card pre .prompt-sign {
+        color: var(--accent);
+        user-select: none;
+      }
+      .quickstart-card pre .cmd-text {
+        color: var(--text-primary);
+      }
+      .quickstart-card pre .comment-text {
+        color: var(--text-dim);
+        font-style: italic;
+      }
+
+      /* ─── Buttons ────────────────────────────────────────────────── */
+      .btn-primary {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.75rem;
+        background: var(--accent);
+        color: var(--bg-deep);
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        font-weight: 600;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+      }
+      .btn-primary:hover {
+        background: var(--accent-dim);
+        text-decoration: none;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 20px var(--accent-glow);
+      }
+      .btn-secondary {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.75rem;
+        background: transparent;
+        color: var(--text-primary);
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        font-weight: 500;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+      }
+      .btn-secondary:hover {
+        border-color: var(--border-bright);
+        background: var(--bg-card);
+        text-decoration: none;
+      }
+
+      /* ─── Footer ─────────────────────────────────────────────────── */
+      footer {
+        padding: 3rem 0;
+        border-top: 1px solid var(--border);
+        text-align: center;
+      }
+      .footer-brand {
+        font-family: var(--font-mono);
+        font-size: 0.85rem;
+        color: var(--text-dim);
+        margin-bottom: 1rem;
+      }
+      .footer-brand .prompt {
+        color: var(--accent);
+      }
+      .footer-links {
+        display: flex;
+        gap: 2rem;
+        justify-content: center;
+        list-style: none;
+      }
+      .footer-links a {
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: color 0.2s;
+      }
+      .footer-links a:hover {
+        color: var(--text-primary);
+        text-decoration: none;
+      }
+
+      /* --- Cross-Nav Footer -------------------------------------------- */
+      .cross-nav-footer {
+        padding: 2rem 0;
+        border-top: 1px solid var(--border);
+      }
+      .cross-nav-toolbar {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .cn-label {
+        font-family: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+        font-size: 0.8rem;
+        color: var(--text-dim);
+        margin-right: 0.25rem;
+        white-space: nowrap;
+      }
+      .cn-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.85rem;
+        border: 1px solid var(--border);
+        border-radius: 100px;
+        font-family: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        text-decoration: none;
+        transition:
+          border-color 0.2s,
+          background 0.2s,
+          color 0.2s;
+        white-space: nowrap;
+      }
+      .cn-pill:hover {
+        border-color: #3a3a50;
+        color: var(--text-primary);
+        text-decoration: none;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .cn-pill.active {
+        border-color: var(--accent);
+        background: var(--accent-glow);
+        color: var(--text-primary);
+        cursor: default;
+        pointer-events: none;
+      }
+      .cn-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      /* ─── Mobile ──────────────────────────────────────────────────── */
+      @media (max-width: 768px) {
+        .nav-links {
+          gap: 1rem;
+        }
+        .nav-links .nav-hide-mobile {
+          display: none;
+        }
+        .demo-grid {
+          grid-template-columns: 1fr;
+        }
+        .feature-grid {
+          grid-template-columns: 1fr;
+        }
+        .quickstart-grid {
+          grid-template-columns: 1fr;
+        }
+        .rules-table {
+          font-size: 0.78rem;
+        }
+        .install-box {
+          flex-wrap: wrap;
+          font-size: 0.8rem;
+        }
+        .install-box--multi .run-cmd {
+          flex-wrap: wrap;
+        }
+        .install-box--multi .run-cmd code {
+          white-space: normal;
+          word-break: break-all;
+          min-width: 0;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .cross-nav-toolbar {
+          gap: 0.4rem;
+        }
+        .cn-pill {
+          font-size: 0.7rem;
+          padding: 0.3rem 0.7rem;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .hero {
+          padding: 8rem 0 4rem;
+        }
+        .hero h1 {
+          font-size: 2rem;
+        }
+        .nav-brand .powered-by {
+          display: none;
+        }
+        .cn-label {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- ─── Nav ──────────────────────────────────────────────────── -->
+    <nav>
+      <div class="container">
+        <div class="nav-brand">
+          <div class="brand-main"><span class="prompt">$</span> sentinel</div>
+          <div class="powered-by">powered by <a href="https://copilotkit.dev" target="_blank" rel="noopener">CopilotKit</a></div>
+        </div>
+        <ul class="nav-links">
+          <li><a href="#features" class="nav-hide-mobile">Features</a></li>
+          <li><a href="#rules" class="nav-hide-mobile">Rules</a></li>
+          <li><a href="#quickstart" class="nav-hide-mobile">Quick Start</a></li>
+          <li>
+            <a
+              href="https://github.com/jpr5/gh-workflow-scanner"
+              class="gh-link"
+              target="_blank"
+              rel="noopener"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path
+                  d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+                />
+              </svg>
+              GitHub
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- ─── Section 1: Hero ──────────────────────────────────────── -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-badge">
+          <span class="dot"></span>
+          21 rules &middot; No AI &middot; Pure Ruby
+        </div>
+
+        <h1>
+          Find CI vulnerabilities<br>
+          <span class="highlight">before attackers do</span>
+        </h1>
+
+        <p class="hero-sub">
+          Deterministic pattern matching against 21 security dimensions.
+          SHA pinning, shell injection, credential exposure, dangerous triggers &mdash;
+          everything your workflows need auditing for. No AI, no gems, no false confidence.
+        </p>
+
+        <div class="install-box install-box--multi">
+          <div class="run-cmd">
+            <span class="prompt-sign">$</span>
+            <code>gem install sentinel</code>
+            <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+          </div>
+          <div class="run-or">or</div>
+          <div class="run-cmd">
+            <span class="prompt-sign">$</span>
+            <code>bin/gh-workflow-scanner owner/repo</code>
+            <button class="copy-btn" onclick="copyCmd(this)">Copy</button>
+          </div>
+        </div>
+
+        <p class="install-secondary">
+          Requires Ruby 3.1+. No dependencies beyond stdlib.
+        </p>
+
+        <div class="demo-grid">
+          <!-- Left: Terminal output -->
+          <div class="demo-panel">
+            <div class="demo-titlebar">
+              <div class="dots"><span></span><span></span><span></span></div>
+              <span class="title">terminal output</span>
+            </div>
+            <div id="demo-term" class="demo-term"></div>
+          </div>
+
+          <!-- Right: GitHub Action -->
+          <div class="demo-panel">
+            <div class="demo-titlebar">
+              <div class="dots"><span></span><span></span><span></span></div>
+              <span class="title">workflow.yml</span>
+            </div>
+            <div class="demo-body">
+              <pre><span class="syn-key">name</span><span class="syn-bracket">:</span> <span class="syn-str">Workflow Security Scan</span>
+<span class="syn-key">on</span><span class="syn-bracket">:</span>
+  <span class="syn-key">pull_request</span><span class="syn-bracket">:</span>
+    <span class="syn-key">paths</span><span class="syn-bracket">:</span> <span class="syn-bracket">[</span><span class="syn-str">'.github/workflows/**'</span><span class="syn-bracket">]</span>
+
+<span class="syn-key">permissions</span><span class="syn-bracket">:</span>
+  <span class="syn-key">contents</span><span class="syn-bracket">:</span> <span class="syn-str">read</span>
+
+<span class="syn-key">jobs</span><span class="syn-bracket">:</span>
+  <span class="syn-key">scan</span><span class="syn-bracket">:</span>
+    <span class="syn-key">runs-on</span><span class="syn-bracket">:</span> <span class="syn-str">ubuntu-latest</span>
+    <span class="syn-key">steps</span><span class="syn-bracket">:</span>
+      - <span class="syn-key">uses</span><span class="syn-bracket">:</span> <span class="syn-str">actions/checkout@v4</span>
+      - <span class="syn-key">uses</span><span class="syn-bracket">:</span> <span class="syn-str">jpr5/gh-workflow-scanner-action@v1</span>
+        <span class="syn-key">id</span><span class="syn-bracket">:</span> <span class="syn-str">scan</span>
+        <span class="syn-key">with</span><span class="syn-bracket">:</span>
+          <span class="syn-key">severity</span><span class="syn-bracket">:</span> <span class="syn-str">high</span>
+          <span class="syn-key">fail-on-findings</span><span class="syn-bracket">:</span> <span class="syn-bool">true</span></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Section 2: Feature Grid ──────────────────────────────── -->
+    <section class="section-features" id="features">
+      <div class="container">
+        <h2 class="fade-in">Everything you need to secure CI</h2>
+
+        <div class="feature-grid">
+          <div class="feature-card fade-in">
+            <div class="feature-icon">&#128737;</div>
+            <h3>21 Security Rules</h3>
+            <p>
+              Critical to low, covering supply chain attacks, shell injection,
+              credential exposure, permission scoping, and dangerous triggers.
+              Every rule maps to a real-world exploit vector.
+            </p>
+          </div>
+
+          <div class="feature-card fade-in" style="transition-delay: 0.08s">
+            <div class="feature-icon">&#9881;</div>
+            <h3>GitHub Action</h3>
+            <p>
+              Inline annotations on PRs, fail-on-findings gate, zero config.
+              Findings appear as errors and warnings directly on the diff.
+            </p>
+          </div>
+
+          <div class="feature-card fade-in" style="transition-delay: 0.16s">
+            <div class="feature-icon">&#128295;</div>
+            <h3>Auto-Fix Engine</h3>
+            <p>
+              Mechanical fixes for unpinned actions, shell injection patterns,
+              and persist-credentials leaks. Safe, deterministic rewrites you
+              can review and merge.
+            </p>
+          </div>
+
+          <div class="feature-card fade-in" style="transition-delay: 0.24s">
+            <div class="feature-icon">&#129302;</div>
+            <h3>PR Bot</h3>
+            <p>
+              Proactive scanning of popular repos with targeted fix PRs for
+              critical findings. Helping the ecosystem one pull request at a time.
+            </p>
+          </div>
+
+          <div class="feature-card fade-in" style="transition-delay: 0.32s">
+            <div class="feature-icon">&#127970;</div>
+            <h3>Org-Wide Scanning</h3>
+            <p>
+              Scan every repo in a GitHub org with a single command.
+              Aggregated reporting across hundreds of repositories, sorted by
+              severity.
+            </p>
+          </div>
+
+          <div class="feature-card fade-in" style="transition-delay: 0.4s">
+            <div class="feature-icon">&#128230;</div>
+            <h3>No Dependencies</h3>
+            <p>
+              Pure Ruby stdlib. No gems, no AI, no cloud service required.
+              Just <code>yaml</code>, <code>net/http</code>, <code>optparse</code>,
+              and <code>json</code>. Runs anywhere Ruby runs.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Section 3: Rules Table ───────────────────────────────── -->
+    <section class="section-rules" id="rules">
+      <div class="container">
+        <h2 class="fade-in">21 security dimensions</h2>
+        <p class="rules-sub fade-in" style="transition-delay: 0.1s">
+          Every rule maps to a documented exploit vector. No heuristics, no guessing &mdash;
+          deterministic pattern matching against known-bad configurations.
+        </p>
+
+        <div class="rules-wrap fade-in" style="transition-delay: 0.2s">
+          <table class="rules-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Rule</th>
+                <th>Severity</th>
+                <th>What it detects</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>unpinned-actions</td>
+                <td><span class="sev-critical">critical</span>/<span class="sev-medium">medium</span></td>
+                <td>Tag-pinned actions (critical for third-party, medium for actions/*)</td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>shell-injection-expr</td>
+                <td><span class="sev-critical">critical</span></td>
+                <td>Attacker-controllable <code>${{ }}</code> in <code>run:</code> blocks</td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td>shell-injection-jq</td>
+                <td><span class="sev-critical">critical</span></td>
+                <td><code>${VAR}</code> in double-quoted jq/curl strings</td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td>dangerous-triggers</td>
+                <td><span class="sev-critical">critical</span></td>
+                <td><code>pull_request_target</code> + fork code checkout</td>
+              </tr>
+              <tr>
+                <td>5</td>
+                <td>missing-persist-credentials</td>
+                <td><span class="sev-high">high</span></td>
+                <td><code>actions/checkout</code> without <code>persist-credentials: false</code></td>
+              </tr>
+              <tr>
+                <td>6</td>
+                <td>credential-window</td>
+                <td><span class="sev-high">high</span></td>
+                <td>Git credentials configured far from push step</td>
+              </tr>
+              <tr>
+                <td>7</td>
+                <td>static-aws-credentials</td>
+                <td><span class="sev-high">high</span></td>
+                <td>Static AWS keys instead of OIDC federation</td>
+              </tr>
+              <tr>
+                <td>8</td>
+                <td>unscoped-app-token</td>
+                <td><span class="sev-high">high</span></td>
+                <td><code>create-github-app-token</code> without permission scoping</td>
+              </tr>
+              <tr>
+                <td>9</td>
+                <td>docker-build-arg-secrets</td>
+                <td><span class="sev-high">high</span></td>
+                <td>Secrets in Docker build-args (visible in image layers)</td>
+              </tr>
+              <tr>
+                <td>10</td>
+                <td>build-publish-same-job</td>
+                <td><span class="sev-high">high</span></td>
+                <td>Build + publish in same job with publish secrets</td>
+              </tr>
+              <tr>
+                <td>11</td>
+                <td>curl-pipe-shell</td>
+                <td><span class="sev-high">high</span></td>
+                <td><code>curl | sh</code> without integrity verification</td>
+              </tr>
+              <tr>
+                <td>12</td>
+                <td>missing-permissions</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td>No top-level permissions block</td>
+              </tr>
+              <tr>
+                <td>13</td>
+                <td>git-config-global</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td><code>git config --global</code> with credentials</td>
+              </tr>
+              <tr>
+                <td>14</td>
+                <td>missing-timeouts</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td>Jobs without <code>timeout-minutes</code></td>
+              </tr>
+              <tr>
+                <td>15</td>
+                <td>missing-env-protection</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td>Publish/deploy jobs without environment protection</td>
+              </tr>
+              <tr>
+                <td>16</td>
+                <td>allow-forks-artifact</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td>Fork-produced artifact download in privileged context</td>
+              </tr>
+              <tr>
+                <td>17</td>
+                <td>missing-frozen-lockfile</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td>Package install without <code>--frozen-lockfile</code> / <code>npm ci</code></td>
+              </tr>
+              <tr>
+                <td>18</td>
+                <td>unpinned-docker-image</td>
+                <td><span class="sev-low">low</span></td>
+                <td>Docker images using <code>:latest</code> tag</td>
+              </tr>
+              <tr>
+                <td>19</td>
+                <td>overly-broad-triggers</td>
+                <td><span class="sev-low">low</span></td>
+                <td>Push/PR triggers without branch/path filters</td>
+              </tr>
+              <tr>
+                <td>20</td>
+                <td>missing-dependabot</td>
+                <td><span class="sev-low">low</span></td>
+                <td>No Dependabot config for github-actions ecosystem</td>
+              </tr>
+              <tr>
+                <td>21</td>
+                <td>missing-zizmor</td>
+                <td><span class="sev-low">low</span></td>
+                <td>No zizmor static analysis workflow</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Section 4: Quick Start ───────────────────────────────── -->
+    <section class="section-quickstart" id="quickstart">
+      <div class="container">
+        <h2 class="fade-in">Get started in seconds</h2>
+
+        <div class="quickstart-grid">
+          <div class="quickstart-card fade-in">
+            <h3>Single repo</h3>
+            <pre><span class="comment-text"># Scan a remote repo via GitHub API</span>
+<span class="prompt-sign">$</span> <span class="cmd-text">export GITHUB_TOKEN=$(gh auth token)</span>
+<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner owner/repo</span></pre>
+          </div>
+
+          <div class="quickstart-card fade-in" style="transition-delay: 0.1s">
+            <h3>Local checkout</h3>
+            <pre><span class="comment-text"># Scan a local directory</span>
+<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner --local .</span>
+
+<span class="comment-text"># Or a specific path</span>
+<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner --local /path/to/repo</span></pre>
+          </div>
+
+          <div class="quickstart-card fade-in" style="transition-delay: 0.2s">
+            <h3>Entire org</h3>
+            <pre><span class="comment-text"># Scan every repo in an org</span>
+<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner --org my-org</span>
+
+<span class="comment-text"># JSON output, high+ severity only</span>
+<span class="prompt-sign">$</span> <span class="cmd-text">bin/gh-workflow-scanner --org my-org \</span>
+  <span class="cmd-text">--format json --severity high</span></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Cross-navigation toolbar -->
+    <div class="cross-nav-footer">
+      <div class="cross-nav-toolbar">
+        <span class="cn-label">copilotkit.dev /</span>
+        <a class="cn-pill" href="https://vscode.copilotkit.dev">
+          <span class="cn-dot" style="background: #aa66ff"></span>vscode
+        </a>
+        <a class="cn-pill" href="https://aimock.copilotkit.dev">
+          <span class="cn-dot" style="background: #00ff88"></span>aimock
+        </a>
+        <a class="cn-pill active" href="https://sentinel.copilotkit.dev">
+          <span class="cn-dot" style="background: #ff8800"></span>sentinel
+        </a>
+        <a class="cn-pill" href="https://oversight.copilotkit.dev">
+          <span class="cn-dot" style="background: #ff6688"></span>oversight
+        </a>
+        <a class="cn-pill" href="https://pathfinder.copilotkit.dev">
+          <span class="cn-dot" style="background: #00ccff"></span>pathfinder
+        </a>
+        <a class="cn-pill" href="https://outpost.copilotkit.dev">
+          <span class="cn-dot" style="background: #f97316"></span>outpost
+        </a>
+      </div>
+    </div>
+
+    <!-- ─── Footer ───────────────────────────────────────────────── -->
+    <footer>
+      <div class="container">
+        <div class="footer-brand"><span class="prompt">$</span> sentinel &middot; MIT License</div>
+        <ul class="footer-links">
+          <li>
+            <a href="https://github.com/jpr5/gh-workflow-scanner" target="_blank" rel="noopener">GitHub</a>
+          </li>
+          <li>
+            <a href="https://copilotkit.dev" target="_blank" rel="noopener">Built by CopilotKit</a>
+          </li>
+        </ul>
+      </div>
+    </footer>
+
+    <!-- ─── Scripts ──────────────────────────────────────────────── -->
+    <script>
+      // Copy the command from the adjacent <code> inside the same .run-cmd row.
+      function copyCmd(btn) {
+        var row = btn.closest(".run-cmd");
+        var codeEl = row && row.querySelector("code");
+        var cmd = codeEl ? codeEl.textContent : "";
+        if (!cmd) return;
+        navigator.clipboard.writeText(cmd).then(function () {
+          btn.textContent = "Copied!";
+          setTimeout(function () {
+            btn.textContent = "Copy";
+          }, 2000);
+        });
+      }
+
+      // Scroll-triggered fade-in via IntersectionObserver
+      (function () {
+        var observer = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (entry) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add("visible");
+                observer.unobserve(entry.target);
+              }
+            });
+          },
+          { threshold: 0.1, rootMargin: "0px 0px -40px 0px" },
+        );
+
+        document.querySelectorAll(".fade-in").forEach(function (el) {
+          observer.observe(el);
+        });
+      })();
+
+      // ── Terminal demo animation ──────────────────────────────────────
+      var termSteps = [
+        // Step 1: User types command
+        {
+          type: "prompt",
+          text: "bin/gh-workflow-scanner acme-corp/web-app",
+          delay: 600,
+        },
+        // Step 2: Scanning starts
+        {
+          type: "line",
+          html: '',
+          delay: 300,
+        },
+        {
+          type: "line",
+          html: '<span class="ok">sentinel v1.0</span> <span class="info">scanning acme-corp/web-app</span>',
+          delay: 400,
+        },
+        {
+          type: "line",
+          html: '<span class="info">  found 3 workflows, 14 jobs</span>',
+          delay: 300,
+        },
+        { type: "line", html: "", delay: 500 },
+        // Finding 1: critical
+        {
+          type: "line",
+          html: '<span class="t-red">CRITICAL</span>  <span class="t-dim">ci.yml:28</span>',
+          delay: 200,
+        },
+        {
+          type: "line",
+          html: '  <span style="color:#e8e8f0">shell-injection-expr</span>',
+          delay: 150,
+        },
+        {
+          type: "line",
+          html: '  <span class="t-dim">$&#123;&#123; github.event.pull_request.title &#125;&#125; in run: block</span>',
+          delay: 300,
+        },
+        { type: "line", html: "", delay: 300 },
+        // Finding 2: high
+        {
+          type: "line",
+          html: '<span class="t-yellow">HIGH</span>      <span class="t-dim">deploy.yml:15</span>',
+          delay: 200,
+        },
+        {
+          type: "line",
+          html: '  <span style="color:#e8e8f0">missing-persist-credentials</span>',
+          delay: 150,
+        },
+        {
+          type: "line",
+          html: '  <span class="t-dim">actions/checkout without persist-credentials: false</span>',
+          delay: 300,
+        },
+        { type: "line", html: "", delay: 300 },
+        // Finding 3: medium
+        {
+          type: "line",
+          html: '<span class="t-cyan">MEDIUM</span>    <span class="t-dim">release.yml:1</span>',
+          delay: 200,
+        },
+        {
+          type: "line",
+          html: '  <span style="color:#e8e8f0">missing-permissions</span>',
+          delay: 150,
+        },
+        {
+          type: "line",
+          html: '  <span class="t-dim">no top-level permissions block</span>',
+          delay: 300,
+        },
+        { type: "line", html: "", delay: 300 },
+        // Finding 4: low
+        {
+          type: "line",
+          html: '<span class="t-dim">LOW</span>       <span class="t-dim">ci.yml:1</span>',
+          delay: 200,
+        },
+        {
+          type: "line",
+          html: '  <span style="color:#e8e8f0">overly-broad-triggers</span>',
+          delay: 150,
+        },
+        {
+          type: "line",
+          html: '  <span class="t-dim">push trigger without branch filter</span>',
+          delay: 400,
+        },
+        { type: "line", html: "", delay: 400 },
+        // Summary
+        {
+          type: "line",
+          html: '<span class="t-red">1 critical</span> &middot; <span class="t-yellow">1 high</span> &middot; <span class="t-cyan">1 medium</span> &middot; <span class="t-dim">1 low</span>',
+          delay: 600,
+        },
+        {
+          type: "line",
+          html: '<span class="t-red">exit 1</span>',
+          delay: 600,
+        },
+      ];
+
+      function runTermDemo() {
+        var term = document.getElementById("demo-term");
+        term.innerHTML = "";
+        var stepIdx = 0;
+
+        function nextStep() {
+          if (stepIdx >= termSteps.length) {
+            // Add blinking cursor, then restart
+            var cursorLine = document.createElement("div");
+            cursorLine.innerHTML = '<span class="prompt-sym">$ </span><span class="cursor"></span>';
+            cursorLine.style.opacity = "1";
+            term.appendChild(cursorLine);
+            setTimeout(runTermDemo, 4000);
+            return;
+          }
+
+          var step = termSteps[stepIdx];
+          stepIdx++;
+
+          if (step.type === "prompt") {
+            // Type out the command character by character
+            var line = document.createElement("div");
+            line.className = "line";
+            line.innerHTML =
+              '<span class="prompt-sym">$ </span><span class="cmd"></span><span class="cursor"></span>';
+            line.classList.add("visible");
+            term.appendChild(line);
+
+            var cmdSpan = line.querySelector(".cmd");
+            var cursor = line.querySelector(".cursor");
+            var ci = 0;
+            function typeChar() {
+              if (ci >= step.text.length) {
+                cursor.remove();
+                setTimeout(nextStep, step.delay);
+                return;
+              }
+              cmdSpan.textContent += step.text[ci];
+              ci++;
+              setTimeout(typeChar, 35 + Math.random() * 30);
+            }
+            typeChar();
+          } else {
+            // Regular line -- fade in
+            var line = document.createElement("div");
+            line.className = "line";
+            if (step.html === "") {
+              line.innerHTML = "&nbsp;";
+            } else {
+              line.innerHTML = step.html;
+            }
+            term.appendChild(line);
+            // Trigger reflow, then add visible class
+            requestAnimationFrame(function () {
+              requestAnimationFrame(function () {
+                line.classList.add("visible");
+              });
+            });
+            setTimeout(nextStep, step.delay);
+          }
+        }
+
+        nextStep();
+      }
+
+      // Start when demo scrolls into view
+      (function () {
+        var demoTerm = document.getElementById("demo-term");
+        if (!demoTerm) return;
+        var demoObserver = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (e) {
+              if (e.isIntersecting) {
+                runTermDemo();
+                demoObserver.unobserve(e.target);
+              }
+            });
+          },
+          { threshold: 0.1 },
+        );
+        demoObserver.observe(demoTerm);
+      })();
+    </script>
+  </body>
+</html>
