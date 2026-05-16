@@ -16,7 +16,7 @@
 
 ## Task 4: Scanner orchestrator + CLI
 - `lib/scanner.rb` — ties it all together
-- `bin/gh-workflow-scanner` — entry point with optparse
+- `bin/sentinel` — entry point with optparse
 
 ## Task 5: Rules batch 1 (critical)
 - Rules 1-4: unpinned_actions, shell_injection_expr, shell_injection_jq, dangerous_triggers
@@ -33,4 +33,4 @@
 - Calibrate rules
 
 ## Task 9: Create GitHub repo
-- Push to jpr5/gh-workflow-scanner
+- Push to CopilotKit/sentinel

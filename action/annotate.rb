@@ -37,7 +37,7 @@ end
 
 # Run the scanner
 cmd = [
-    "ruby", "/scanner/bin/gh-workflow-scanner",
+    "ruby", "/scanner/bin/sentinel",
     "--local", workspace,
     "--format", "json",
     "--severity", severity,
