@@ -640,23 +640,28 @@
         position: sticky;
         top: 57px;
         z-index: 10;
-        padding: 0.6rem 1rem;
-        background: #0d1220;
+        padding: 0.75rem 1rem;
+        background: var(--bg-deep);
         border-bottom: 1px solid var(--border);
+        border-right: 1px solid var(--border);
         font-weight: 600;
         text-align: left;
         font-family: var(--font-mono);
         font-size: 0.8rem;
-        color: var(--text-dim);
+        color: var(--text-secondary);
         white-space: nowrap;
       }
       .rules-table thead th:first-child {
-        width: 3rem;
         text-align: center;
+        width: 3rem;
+      }
+      .rules-table thead th:last-child {
+        border-right: none;
       }
       .rules-table tbody td {
-        padding: 0.6rem 1rem;
+        padding: 0.75rem 1rem;
         border-bottom: 1px solid var(--border);
+        border-right: 1px solid var(--border);
         color: var(--text-secondary);
       }
       .rules-table tbody td:first-child {
@@ -670,6 +675,9 @@
         color: var(--text-primary);
         font-weight: 500;
         white-space: nowrap;
+      }
+      .rules-table tbody td:last-child {
+        border-right: none;
       }
       .rules-table tbody tr:hover td {
         background: var(--bg-card-hover);
