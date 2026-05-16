@@ -290,10 +290,6 @@ end
 
 Rules are auto-discovered from `lib/rules/`.
 
-## Roadmap
-
-- **GitLab / Bitbucket CI** -- Same 28 rules applied to GitLab CI and Bitbucket Pipelines YAML.
-
 ## License
 
 MIT
