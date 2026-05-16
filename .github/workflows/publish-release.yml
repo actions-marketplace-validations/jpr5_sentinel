@@ -28,7 +28,7 @@ jobs:
         run: |
           VERSION=$(ruby -e 'require_relative "lib/version"; puts Sentinel::VERSION')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          if gem search ^sentinel-ci$ --remote --exact --versions | grep -q "${VERSION}"; then
+          if curl -s "https://rubygems.org/api/v1/versions/sentinel-ci.json" | ruby -rjson -e 'exit(JSON.parse(STDIN.read).any? { |v| v["number"] == ARGV[0] } ? 0 : 1)' "${VERSION}"; then
             echo "published=true" >> "$GITHUB_OUTPUT"
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
