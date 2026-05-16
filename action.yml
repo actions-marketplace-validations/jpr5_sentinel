@@ -11,6 +11,18 @@ inputs:
     description: 'Fail the check if findings above threshold exist'
     required: false
     default: 'true'
+  fix:
+    description: 'Auto-fix findings (mechanical fixes for 6 rules)'
+    required: false
+    default: 'false'
+  ai-fix:
+    description: 'Also use AI-powered fixes for complex rules (requires ai-key)'
+    required: false
+    default: 'false'
+  ai-key:
+    description: 'Anthropic API key for AI-powered fixes'
+    required: false
+    default: ''
 
 outputs:
   findings-count:
@@ -19,6 +31,8 @@ outputs:
     description: 'Critical findings count'
   high-count:
     description: 'High findings count'
+  fixes-applied:
+    description: 'Number of findings auto-fixed'
 
 runs:
   using: 'docker'

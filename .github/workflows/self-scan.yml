@@ -19,3 +19,6 @@ jobs:
         with:
           severity: medium
           fail-on-findings: false
+          # fix: true          # Enable to auto-fix findings
+          # ai-fix: true       # Enable AI fixes (requires ai-key)
+          # ai-key: ${{ secrets.ANTHROPIC_API_KEY }}

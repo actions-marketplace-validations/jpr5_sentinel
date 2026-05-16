@@ -1,7 +1,15 @@
 #!/usr/bin/env ruby
 
 require "json"
+require "net/http"
+require "uri"
 require "open3"
+
+$LOAD_PATH.unshift("/scanner/lib")
+require "finding"
+require "auto_fix"
+require "ai_fix"
+require "sha_resolver"
 
 SEVERITY_LEVELS = %w[critical high medium low].freeze
 
@@ -23,6 +31,151 @@ def set_output(name, value)
         File.open(output_file, "a") { |f| f.puts "#{name}=#{value}" }
     end
 end
+
+# Apply fixes to workflow files on disk.
+# Returns an array of file paths that were modified.
+def apply_fixes(findings, workspace, ai_fix: false, ai_key: nil)
+    sha_resolver = ShaResolver.new
+    fixed_files = []
+
+    # Group findings by file so we apply fixes per-file
+    by_file = findings.group_by { |f| f["file"] }
+
+    by_file.each do |file, file_findings|
+        # Resolve the on-disk path
+        path = if file.start_with?(".github/")
+            File.join(workspace, file)
+        elsif file == "dependabot.yml"
+            File.join(workspace, ".github", "dependabot.yml")
+        else
+            File.join(workspace, ".github", "workflows", file)
+        end
+
+        next unless File.exist?(path)
+
+        content = File.read(path)
+        original = content.dup
+        modified = false
+
+        # Sort findings by line descending so later-line fixes don't shift
+        # earlier-line positions (each fix re-parses from current content)
+        sorted = file_findings.sort_by { |f| -(f["line"] || 0) }
+
+        sorted.each do |raw_finding|
+            finding = Finding.new(
+                rule:     raw_finding["rule"],
+                severity: raw_finding["severity"].to_sym,
+                file:     raw_finding["file"],
+                line:     raw_finding["line"],
+                code:     raw_finding["code"],
+                message:  raw_finding["message"],
+                fix:      raw_finding["fix"],
+            )
+
+            if AutoFix.can_fix?(finding)
+                result = AutoFix.apply(finding, content, sha_resolver: sha_resolver)
+                if result && result != content
+                    content = result
+                    modified = true
+                    puts "  Fixed [#{finding.rule}] in #{file}:#{finding.line} (mechanical)"
+                end
+            elsif ai_fix && ai_key && !ai_key.empty?
+                result = AiFix.apply(finding, content, api_key: ai_key)
+                if result && result != content
+                    content = result
+                    modified = true
+                    puts "  Fixed [#{finding.rule}] in #{file}:#{finding.line} (AI)"
+                end
+            end
+        end
+
+        if modified
+            File.write(path, content)
+            fixed_files << path
+        end
+    end
+
+    fixed_files
+end
+
+# Push fixes directly to the PR's source branch.
+def push_inline_fixes(workspace, branch, repo, token)
+    Dir.chdir(workspace) do
+        system("git", "config", "user.name", "sentinel[bot]")
+        system("git", "config", "user.email", "sentinel[bot]@users.noreply.github.com")
+
+        # Checkout the PR branch (we may be on the merge ref)
+        system("git", "fetch", "origin", branch)
+        system("git", "checkout", branch)
+
+        system("git", "add", ".github/workflows/")
+
+        unless system("git", "diff", "--cached", "--quiet")
+            system("git", "commit", "-m",
+                "fix: auto-fix workflow security findings\n\nApplied by Sentinel (https://github.com/jpr5/sentinel)")
+
+            remote_url = "https://x-access-token:#{token}@github.com/#{repo}.git"
+            if system("git", "push", remote_url, branch)
+                puts "Pushed fixes to branch #{branch}"
+            else
+                $stderr.puts "Failed to push fixes to #{branch}"
+            end
+        end
+    end
+end
+
+# Create a new PR with the fixes applied to a fresh branch.
+def create_fix_pr(workspace, repo, token)
+    Dir.chdir(workspace) do
+        branch = "sentinel/fix-#{Time.now.strftime('%Y%m%d-%H%M%S')}"
+
+        system("git", "config", "user.name", "sentinel[bot]")
+        system("git", "config", "user.email", "sentinel[bot]@users.noreply.github.com")
+        system("git", "checkout", "-b", branch)
+        system("git", "add", ".github/workflows/")
+
+        unless system("git", "diff", "--cached", "--quiet")
+            system("git", "commit", "-m",
+                "fix: auto-fix workflow security findings\n\nApplied by Sentinel (https://github.com/jpr5/sentinel)")
+
+            remote_url = "https://x-access-token:#{token}@github.com/#{repo}.git"
+            if system("git", "push", remote_url, branch)
+                create_pr_via_api(repo, branch, token)
+                puts "Created fix PR from branch #{branch}"
+            else
+                $stderr.puts "Failed to push branch #{branch}"
+            end
+        end
+    end
+end
+
+def create_pr_via_api(repo, branch, token)
+    uri = URI("https://api.github.com/repos/#{repo}/pulls")
+    req = Net::HTTP::Post.new(uri)
+    req["Authorization"] = "Bearer #{token}"
+    req["Accept"] = "application/vnd.github+json"
+    req.body = JSON.generate({
+        title: "fix: Sentinel auto-fix workflow security findings",
+        head: branch,
+        base: "main",
+        body: "## Auto-fix by Sentinel\n\nThis PR fixes security findings " \
+              "detected by [Sentinel](https://github.com/jpr5/sentinel).\n\n" \
+              "Please review the changes before merging."
+    })
+
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    resp = http.request(req)
+
+    if resp.code.to_i == 201
+        pr_url = JSON.parse(resp.body)["html_url"]
+        puts "PR created: #{pr_url}"
+    else
+        $stderr.puts "Failed to create PR: #{resp.code} #{resp.body}"
+    end
+end
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 # Read inputs from environment (GitHub Actions sets INPUT_* vars)
 severity  = (ENV["INPUT_SEVERITY"] || "high").downcase
@@ -128,6 +281,39 @@ puts ""
 set_output("findings-count", total_count)
 set_output("critical-count", critical_count)
 set_output("high-count", high_count)
+
+# ── Fix mode ──────────────────────────────────────────────────────────────────
+
+fixes_applied = 0
+
+if ENV["INPUT_FIX"] == "true"
+    event_name = ENV["GITHUB_EVENT_NAME"]
+    head_ref   = ENV["GITHUB_HEAD_REF"]
+    repo       = ENV["GITHUB_REPOSITORY"]
+    token      = ENV["GITHUB_TOKEN"] || ENV["INPUT_GITHUB_TOKEN"]
+
+    ai_fix = ENV["INPUT_AI_FIX"] == "true"
+    ai_key = ENV["INPUT_AI_KEY"]
+
+    puts ""
+    puts "Fix mode enabled — applying fixes..."
+    puts ""
+
+    fixed_files = apply_fixes(findings, workspace, ai_fix: ai_fix, ai_key: ai_key)
+    fixes_applied = fixed_files.length
+
+    if fixed_files.any?
+        if event_name == "pull_request" && head_ref && !head_ref.empty?
+            push_inline_fixes(workspace, head_ref, repo, token)
+        else
+            create_fix_pr(workspace, repo, token)
+        end
+    else
+        puts "No fixable findings detected."
+    end
+end
+
+set_output("fixes-applied", fixes_applied)
 
 # Exit with failure if findings exist and fail-on-findings is true
 if fail_on && total_count > 0
