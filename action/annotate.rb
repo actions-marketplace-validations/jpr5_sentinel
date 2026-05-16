@@ -120,7 +120,7 @@ def push_inline_fixes(workspace, branch, repo, token)
         system("git", "fetch", "origin", branch)
         system("git", "checkout", branch)
 
-        system("git", "add", ".github/workflows/")
+        system("git", "add", ".github/")
 
         unless system("git", "diff", "--cached", "--quiet")
             system("git", "commit", "-m",
@@ -153,7 +153,7 @@ def create_fix_pr(workspace, repo, token)
                [:out, :err] => File::NULL)
 
         system("git", "checkout", "-b", branch)
-        system("git", "add", ".github/workflows/")
+        system("git", "add", ".github/")
 
         unless system("git", "diff", "--cached", "--quiet")
             system("git", "commit", "-m",
@@ -170,7 +170,34 @@ def create_fix_pr(workspace, repo, token)
     end
 end
 
+def default_branch(repo, token)
+    # Prefer the branch that triggered the workflow (for push events this is the default branch)
+    ref = ENV["GITHUB_REF_NAME"]
+    return ref if ref && !ref.empty?
+
+    # Fallback: ask the GitHub API
+    begin
+        uri = URI("https://api.github.com/repos/#{repo}")
+        req = Net::HTTP::Get.new(uri)
+        req["Authorization"] = "Bearer #{token}"
+        req["Accept"] = "application/vnd.github+json"
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = true
+        resp = http.request(req)
+        if resp.code.to_i == 200
+            branch = JSON.parse(resp.body)["default_branch"]
+            return branch if branch && !branch.empty?
+        end
+    rescue StandardError
+        # ignore — fall through to "main"
+    end
+
+    "main"
+end
+
 def create_pr_via_api(repo, branch, token)
+    base = default_branch(repo, token)
+
     uri = URI("https://api.github.com/repos/#{repo}/pulls")
     req = Net::HTTP::Post.new(uri)
     req["Authorization"] = "Bearer #{token}"
@@ -178,7 +205,7 @@ def create_pr_via_api(repo, branch, token)
     req.body = JSON.generate({
         title: "fix: Sentinel auto-fix workflow security findings",
         head: branch,
-        base: "main",
+        base: base,
         body: "## Auto-fix by Sentinel\n\nThis PR fixes security findings " \
               "detected by [Sentinel](https://github.com/jpr5/sentinel).\n\n" \
               "Please review the changes before merging."

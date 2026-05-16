@@ -1,6 +1,7 @@
 require "optparse"
 require_relative "../scanner"
 require_relative "../supply_chain"
+require_relative "token_resolver"
 
 options = {
     format: "terminal",
@@ -55,20 +56,7 @@ elsif modes.length > 1
     exit 2
 end
 
-def resolve_token(options)
-    return options[:token] if options[:token]
-    return ENV["GITHUB_TOKEN"] if ENV["GITHUB_TOKEN"]
-
-    gh_path = `which gh 2>/dev/null`.strip
-    if !gh_path.empty? && system("gh", "auth", "status", [:out, :err] => File::NULL)
-        token = `gh auth token 2>/dev/null`.strip
-        return token unless token.empty?
-    end
-
-    nil
-end
-
-token = resolve_token(options)
+token = TokenResolver.resolve(options)
 
 # Build a client to fetch workflow files
 client = if options[:local]

@@ -44,7 +44,7 @@ module Formatter
                 "locations" => [{
                     "physicalLocation" => {
                         "artifactLocation" => {
-                            "uri" => ".github/workflows/#{finding.file}",
+                            "uri" => build_uri(finding),
                             "uriBaseId" => "%SRCROOT%"
                         },
                         "region" => {
@@ -53,6 +53,17 @@ module Formatter
                     }
                 }]
             }
+        end
+
+        def build_uri(finding)
+            file = finding.file
+            if file.include?("/") || file == "(missing)"
+                file
+            elsif file == "dependabot.yml"
+                ".github/#{file}"
+            else
+                ".github/workflows/#{file}"
+            end
         end
 
         def sarif_level(severity)
