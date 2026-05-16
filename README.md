@@ -1,7 +1,15 @@
-# gh-workflow-scanner
+# Sentinel
 
-A deterministic Ruby CLI that audits GitHub Actions workflows for security
-vulnerabilities across 20 dimensions. No AI, no gems -- pure Ruby stdlib.
+**Deterministic security scanner for GitHub Actions workflows**
+
+<!-- badges -->
+![Build](https://img.shields.io/badge/build-passing-brightgreen)
+![Ruby](https://img.shields.io/badge/ruby-3.1%2B-red)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
+Scan GitHub Actions workflows for 21 security vulnerabilities. No AI, no gems -- pure Ruby stdlib.
+
+Documentation: https://sentinel.copilotkit.dev
 
 ## Install
 
@@ -12,6 +20,22 @@ export GITHUB_TOKEN=$(gh auth token)  # or set manually
 ```
 
 Requires Ruby 3.1+. No dependencies beyond stdlib (`yaml`, `net/http`, `optparse`, `json`).
+
+## Usage
+
+```bash
+# Scan a single repo
+bin/gh-workflow-scanner owner/repo
+
+# Scan a local checkout
+bin/gh-workflow-scanner --local /path/to/repo
+
+# Scan an entire GitHub org
+bin/gh-workflow-scanner --org my-org
+
+# JSON output, filter to high+ severity
+bin/gh-workflow-scanner --format json --severity high owner/repo
+```
 
 ## GitHub Action
 
@@ -62,22 +86,6 @@ jobs:
 Findings appear as inline annotations on the PR diff -- critical/high as errors,
 medium as warnings, low as notices.
 
-## Usage
-
-```bash
-# Scan a single repo
-bin/gh-workflow-scanner owner/repo
-
-# Scan a local checkout
-bin/gh-workflow-scanner --local /path/to/repo
-
-# Scan an entire GitHub org
-bin/gh-workflow-scanner --org my-org
-
-# JSON output, filter to high+ severity
-bin/gh-workflow-scanner --format json --severity high owner/repo
-```
-
 ## What It Checks
 
 | # | Rule | Severity | What |
@@ -104,11 +112,47 @@ bin/gh-workflow-scanner --format json --severity high owner/repo
 | 20 | `missing-dependabot` | low | No Dependabot config for github-actions ecosystem |
 | 21 | `missing-zizmor` | low | No zizmor static analysis workflow |
 
-## Exit Codes
+## Auto-Fix
 
-- `0` — no critical or high findings
-- `1` — critical or high findings present
-- `2` — usage error
+Sentinel can automatically generate fixes for three rule categories:
+
+```bash
+bin/gh-workflow-scanner --fix owner/repo    # future CLI flag
+```
+
+Or use the Ruby API directly:
+
+```ruby
+require_relative "lib/auto_fix"
+require_relative "lib/sha_resolver"
+
+resolver = ShaResolver.new
+patched = AutoFix.apply(finding, raw_yaml, sha_resolver: resolver)
+```
+
+**Fixable rules:**
+
+| Rule | Fix Strategy |
+|------|-------------|
+| `unpinned-actions` | Resolves tag to SHA via GitHub API |
+| `shell-injection-expr` | Moves expression to step-level `env:` block |
+| `missing-persist-credentials` | Adds `persist-credentials: false` to checkout |
+
+## PR Bot
+
+Proactively scan popular public repos and open fix PRs for critical findings.
+
+```bash
+ruby bot/scanner_bot.rb --pattern shell-injection --dry-run
+```
+
+**Features:**
+
+- GitHub Code Search to find vulnerable repos
+- Auto-generates fix PRs for mechanically-fixable rules
+- Rate limited (50 PRs/day), stars threshold (>100)
+- Opt-out support, clear bot identity
+- Runs as daily cron via GitHub Actions
 
 ## Options
 
@@ -120,23 +164,39 @@ bin/gh-workflow-scanner --format json --severity high owner/repo
 --token TOKEN      GitHub API token (default: GITHUB_TOKEN env var)
 ```
 
+## Exit Codes
+
+- `0` -- no critical or high findings
+- `1` -- critical or high findings present
+- `2` -- usage error
+
 ## Architecture
 
 ```
-bin/gh-workflow-scanner    # CLI entry point (optparse)
+bin/gh-workflow-scanner         # CLI entry point (optparse)
+action/
+  annotate.rb                   # GitHub Action annotation emitter
 lib/
-  scanner.rb               # orchestrator
-  rule_engine.rb           # loads + runs all rules
-  workflow.rb              # YAML parser + helpers
-  finding.rb               # finding data struct
-  github_client.rb         # GitHub API client
-  local_client.rb          # filesystem client
+  scanner.rb                    # orchestrator
+  rule_engine.rb                # loads + runs all rules
+  workflow.rb                   # YAML parser + helpers
+  finding.rb                    # finding data struct
+  github_client.rb              # GitHub API client
+  local_client.rb               # filesystem client
+  auto_fix.rb                   # auto-fix engine
+  sha_resolver.rb               # GitHub tag -> SHA resolver
   formatter/
-    terminal.rb            # colored terminal output
-    json.rb                # JSON output
+    terminal.rb                 # colored terminal output
+    json.rb                     # JSON output
   rules/
-    base.rb                # abstract rule interface
-    *.rb                   # one file per rule
+    base.rb                     # abstract rule interface
+    *.rb                        # one file per rule (19 rules)
+bot/
+  scanner_bot.rb                # PR bot orchestrator
+  search.rb                     # GitHub Code Search client
+  state.rb                      # JSON-file state tracking
+  pr_writer.rb                  # cross-fork PR creation
+  config.rb                     # bot configuration
 ```
 
 ## Adding Rules
