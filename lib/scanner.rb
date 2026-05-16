@@ -4,6 +4,8 @@ require_relative "rule_engine"
 require_relative "github_client"
 require_relative "local_client"
 require_relative "clone_client"
+require_relative "auto_fix"
+require_relative "ai_fix"
 require_relative "formatter/terminal"
 require_relative "formatter/json"
 

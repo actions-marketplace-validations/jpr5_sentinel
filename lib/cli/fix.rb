@@ -1,6 +1,7 @@
 require "optparse"
 require_relative "../scanner"
 require_relative "../auto_fix"
+require_relative "../ai_fix"
 
 options = {
     format: "terminal",
@@ -46,7 +47,7 @@ parser = OptionParser.new do |opts|
         options[:ai] = true
     end
 
-    opts.on("--model MODEL", "AI model to use (default: claude-sonnet-4-20250514)") do |m|
+    opts.on("--model MODEL", "AI model to use (default: #{AiFix::DEFAULT_MODEL})") do |m|
         options[:model] = m
     end
 
@@ -68,7 +69,8 @@ rescue OptionParser::InvalidArgument, OptionParser::InvalidOption => e
     exit 2
 end
 
-# --- AI stub ---
+# --- Validate AI key if --ai is set ---
+ai_key = nil
 if options[:ai]
     ai_key = options[:ai_key] || ENV["ANTHROPIC_API_KEY"]
     if ai_key.nil? || ai_key.empty?
@@ -83,9 +85,6 @@ if options[:ai]
             that require understanding workflow intent.
         MSG
         exit 2
-    else
-        $stderr.puts "AI-powered fixes coming in v0.2.0."
-        exit 0
     end
 end
 
@@ -117,38 +116,35 @@ scanner = Scanner.new(client: client, formatter: formatter, min_severity: option
 result = scanner.scan(repo)
 findings = result[:findings]
 
-fixable = findings.select { |f| AutoFix.can_fix?(f) }
-unfixable = findings.reject { |f| AutoFix.can_fix?(f) }
+mechanical = findings.select { |f| AutoFix.can_fix?(f) }
+ai_eligible = findings.select { |f| AiFix.can_fix?(f) }
 
-$stderr.puts "Found #{findings.length} findings (#{fixable.length} auto-fixable)"
+$stderr.puts "Found #{findings.length} findings (#{mechanical.length} mechanical, #{ai_eligible.length} AI-eligible)"
 $stderr.puts ""
 
-if fixable.empty?
-    $stderr.puts "No auto-fixable findings."
+if mechanical.empty? && (!options[:ai] || ai_eligible.empty?)
+    $stderr.puts "No fixable findings."
     exit 0
 end
 
-# --- Group findings by file ---
-by_file = fixable.group_by(&:file)
-
 # --- Read raw file contents ---
+all_fixable_files = (mechanical + (options[:ai] ? ai_eligible : [])).map(&:file).uniq
 file_contents = {}
-by_file.each_key do |filename|
+all_fixable_files.each do |filename|
     path = File.join(workflows_dir, filename)
     if File.exist?(path)
         file_contents[filename] = File.read(path)
     end
 end
 
-# --- Apply fixes ---
-fixed_count = 0
-fixed_details = Hash.new { |h, k| h[k] = [] }
+# --- Pass 1: Mechanical fixes ---
+mechanical_details = Hash.new { |h, k| h[k] = [] }
+mechanical_count = 0
 
-by_file.each do |filename, file_findings|
+by_file_mechanical = mechanical.group_by(&:file)
+by_file_mechanical.each do |filename, file_findings|
     content = file_contents[filename]
     next unless content
-
-    original = content.dup
 
     # Sort findings by line descending so line numbers stay valid as we modify
     sorted = file_findings.sort_by { |f| -(f.line || 0) }
@@ -177,61 +173,128 @@ by_file.each do |filename, file_findings|
             "#{finding.rule}: applied fix"
         end
 
-        fixed_details[filename] << "  - #{detail}"
-        fixed_count += 1
+        mechanical_details[filename] << "  - #{detail}"
+        mechanical_count += 1
     end
 
-    if content != original
-        if options[:dry_run]
-            # Show unified diff
-            require "tempfile"
-            orig_file = Tempfile.new(["orig", ".yml"])
-            fixed_file = Tempfile.new(["fixed", ".yml"])
-            begin
-                orig_file.write(original)
-                orig_file.flush
-                fixed_file.write(content)
-                fixed_file.flush
+    file_contents[filename] = content
+end
 
-                diff_output = `diff -u #{orig_file.path} #{fixed_file.path} 2>&1`
-                # Replace temp paths with meaningful names
-                diff_output.sub!(/^--- .*$/, "--- .github/workflows/#{filename}")
-                diff_output.sub!(/^\+\+\+ .*$/, "+++ .github/workflows/#{filename} (fixed)")
-                puts diff_output
-                puts ""
-            ensure
-                orig_file.close!
-                fixed_file.close!
+# --- Pass 2: AI fixes (if --ai is set) ---
+ai_details = Hash.new { |h, k| h[k] = [] }
+ai_count = 0
+ai_model = options[:model] || AiFix::DEFAULT_MODEL
+
+if options[:ai] && ai_key
+    by_file_ai = ai_eligible.group_by(&:file)
+    by_file_ai.each do |filename, file_findings|
+        content = file_contents[filename]
+        next unless content
+
+        file_findings.each do |finding|
+            $stderr.puts "  AI fixing #{finding.rule} in #{filename}:#{finding.line}..."
+            fixed = AiFix.apply(finding, content, model: ai_model, api_key: ai_key)
+
+            if fixed
+                content = fixed
+                ai_details[filename] << "  - #{finding.rule}: AI-generated fix applied"
+                ai_count += 1
+            else
+                $stderr.puts "  AI fix failed for #{finding.rule} in #{filename}:#{finding.line}"
             end
-        else
-            # Write the fixed file
-            path = File.join(workflows_dir, filename)
-            File.write(path, content)
         end
+
+        file_contents[filename] = content
+    end
+end
+
+# --- Write or diff ---
+all_changed_files = (mechanical_details.keys + ai_details.keys).uniq
+
+all_changed_files.each do |filename|
+    path = File.join(workflows_dir, filename)
+    original = File.exist?(path) ? File.read(path) : ""
+    content = file_contents[filename]
+
+    next unless content && content != original
+
+    if options[:dry_run]
+        # Show unified diff
+        require "tempfile"
+        orig_file = Tempfile.new(["orig", ".yml"])
+        fixed_file = Tempfile.new(["fixed", ".yml"])
+        begin
+            orig_file.write(original)
+            orig_file.flush
+            fixed_file.write(content)
+            fixed_file.flush
+
+            diff_output = `diff -u #{orig_file.path} #{fixed_file.path} 2>&1`
+            # Replace temp paths with meaningful names
+            diff_output.sub!(/^--- .*$/, "--- .github/workflows/#{filename}")
+            diff_output.sub!(/^\+\+\+ .*$/, "+++ .github/workflows/#{filename} (fixed)")
+            puts diff_output
+            puts ""
+        ensure
+            orig_file.close!
+            fixed_file.close!
+        end
+    else
+        File.write(path, content)
     end
 end
 
 # --- Output summary ---
 puts ""
 
-by_file.each_key do |filename|
-    next unless fixed_details.key?(filename)
-    action = options[:dry_run] ? "Would fix" : "Fixed"
+# Mechanical fixes
+mechanical_details.each do |filename, details|
+    action = options[:dry_run] ? "Would fix (mechanical)" : "Fixed (mechanical)"
     puts "#{action}: .github/workflows/#{filename}"
-    fixed_details[filename].each { |d| puts d }
+    details.each { |d| puts d }
     puts ""
 end
 
-if unfixable.any?
-    puts "Skipped (no auto-fix available):"
-    unfixable.each do |f|
+# AI fixes
+ai_details.each do |filename, details|
+    action = options[:dry_run] ? "Would fix (AI)" : "Fixed (AI)"
+    puts "#{action}: .github/workflows/#{filename}"
+    details.each { |d| puts d }
+    puts ""
+end
+
+# Skipped findings (not mechanical, no --ai or AI not available)
+skipped = if options[:ai]
+    # With --ai, only findings that failed AI fix are skipped
+    ai_eligible.select { |f| !ai_details.values.flatten.any? { |d| d.include?(f.rule) } }
+    # Simpler: nothing is "skipped" category when --ai is on; failures already reported
+    []
+else
+    ai_eligible
+end
+
+if skipped.any?
+    puts "Skipped (no auto-fix, no --ai):"
+    skipped.each do |f|
         puts "  - #{f.rule}: #{f.file}:#{f.line}"
     end
     puts ""
 end
 
-manual_count = unfixable.length
+# Warning for AI fixes
+if ai_count > 0
+    puts "⚠ AI-generated fixes should be reviewed before merging."
+    puts ""
+end
+
+# Summary line
+total_fixed = mechanical_count + ai_count
+manual_count = skipped.length
 verb = options[:dry_run] ? "would be fixed" : "fixed"
-puts "#{fixed_count} findings #{verb}, #{manual_count} require manual review."
+parts = ["#{total_fixed} findings #{verb}"]
+parts << "#{mechanical_count} mechanical" if mechanical_count > 0 && ai_count > 0
+parts << "#{ai_count} AI" if ai_count > 0
+parts << "#{manual_count} require manual review" if manual_count > 0
+puts parts.join(", ") + "."
 
 exit 0
