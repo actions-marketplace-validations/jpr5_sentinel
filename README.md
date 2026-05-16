@@ -200,6 +200,16 @@ ruby bot/scanner_bot.rb --pattern shell-injection --dry-run
 - Opt-out support, clear bot identity
 - Runs as daily cron via GitHub Actions
 
+## Supply Chain Analysis
+
+Map third-party action dependencies with risk scoring:
+
+```bash
+sentinel deps --local .
+sentinel deps owner/repo
+sentinel deps --org my-org --format json
+```
+
 ## Options
 
 ```
@@ -229,15 +239,26 @@ lib/
   finding.rb                    # finding data struct
   github_client.rb              # GitHub API client
   local_client.rb               # filesystem client
-  auto_fix.rb                   # auto-fix engine
+  clone_client.rb               # git-clone client for public repos
+  auto_fix.rb                   # mechanical auto-fix engine
+  ai_fix.rb                     # AI-powered fix via Claude
   sha_resolver.rb               # GitHub tag -> SHA resolver
+  policy.rb                     # policy-as-code engine (.sentinel-ci.yml)
+  supply_chain.rb               # action dependency graph + risk scoring
+  version.rb                    # gem version constant
+  cli/
+    scan.rb                     # sentinel scan subcommand
+    fix.rb                      # sentinel fix subcommand
+    bot.rb                      # sentinel bot subcommand
+    hook.rb                     # sentinel hook install/uninstall
+    deps.rb                     # sentinel deps subcommand
   formatter/
     terminal.rb                 # colored terminal output
     json.rb                     # JSON output
     sarif.rb                    # SARIF output for GitHub Security tab
   rules/
     base.rb                     # abstract rule interface
-    *.rb                        # one file per rule (26 rules)
+    *.rb                        # one file per rule (27 rules)
 bot/
   scanner_bot.rb                # PR bot orchestrator
   search.rb                     # GitHub Code Search client
@@ -271,10 +292,7 @@ Rules are auto-discovered from `lib/rules/`.
 
 ## Roadmap
 
-- **Policy-as-code** -- `.sentinel-ci.yml` config for org-wide security standards. Define minimum requirements (SHA pinning mandatory, no self-hosted on public repos) and fail CI on violations.
-- **Supply chain graph** -- Map third-party action dependencies, maintainer risk, incident history. Risk scoring per action.
 - **GitLab / Bitbucket CI** -- Same 28 rules applied to GitLab CI and Bitbucket Pipelines YAML.
-- **Pre-commit hook** -- `sentinel hook install` for instant feedback before commits touch workflow files.
 
 ## License
 

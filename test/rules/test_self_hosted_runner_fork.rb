@@ -52,6 +52,42 @@ class TestSelfHostedRunnerFork < Minitest::Test
         assert_empty findings
     end
 
+    def test_flags_multiple_self_hosted_jobs
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            build:
+              runs-on: self-hosted
+              steps:
+                - uses: actions/checkout@v4
+            test:
+              runs-on: self-hosted
+              steps:
+                - uses: actions/checkout@v4
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 2, findings.length
+    end
+
+    def test_flags_self_hosted_with_mixed_runners
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+            deploy:
+              runs-on: self-hosted
+              steps:
+                - uses: actions/checkout@v4
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
     def test_safe_with_self_hosted_labeled_gate
         yaml = <<~YAML
           on:
