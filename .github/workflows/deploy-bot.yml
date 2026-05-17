@@ -11,34 +11,89 @@ permissions:
   contents: read
   packages: write
 
+env:
+  RAILWAY_ENV_ID: "0ee31ecd-3d59-4791-a04a-3f106d82cd85"
+
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: sentinel-bot
+            image: sentinel-bot
+            dockerfile: bot/Dockerfile
+            railway_id: "0c10c80f-8af0-4fdb-b38e-a69476ad8269"
+          - name: sentinel-web
+            image: sentinel-web
+            dockerfile: bot/Dockerfile.web
+            railway_id: "10b44b70-d3a2-4876-b81f-9a105a39b944"
+
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Log in to GHCR
+      - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push bot image
+      - name: Build and push
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
-          file: bot/Dockerfile
+          file: ${{ matrix.service.dockerfile }}
           push: true
-          tags: ghcr.io/jpr5/sentinel-bot:latest
+          tags: |
+            ghcr.io/jpr5/${{ matrix.service.image }}:latest
+            ghcr.io/jpr5/${{ matrix.service.image }}:${{ github.sha }}
 
-      - name: Build and push web image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-        with:
-          context: .
-          file: bot/Dockerfile.web
-          push: true
-          tags: ghcr.io/jpr5/sentinel-web:latest
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SERVICE_ID: ${{ matrix.service.railway_id }}
+          ENV_ID: ${{ env.RAILWAY_ENV_ID }}
+        run: |
+          RESULT=$(curl -s -X POST "https://backboard.railway.com/graphql/v2" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { serviceInstanceRedeploy(serviceId: \\\"$SERVICE_ID\\\", environmentId: \\\"$ENV_ID\\\") }\"}")
+          ERRORS=$(echo "$RESULT" | jq -r '.errors[]?.message // empty')
+          if [ -n "$ERRORS" ]; then
+            echo "::error::Railway redeploy failed: $ERRORS"
+            exit 1
+          fi
+          echo "Deploy triggered for ${{ matrix.service.name }}"
+
+      - name: Verify deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          SERVICE_ID: ${{ matrix.service.railway_id }}
+          ENV_ID: ${{ env.RAILWAY_ENV_ID }}
+        run: |
+          for i in $(seq 1 18); do
+            RESULT=$(curl -s -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"query { deployments(first: 1, input: { serviceId: \\\"$SERVICE_ID\\\", environmentId: \\\"$ENV_ID\\\" }) { edges { node { status } } } }\"}" \
+              https://backboard.railway.com/graphql/v2 2>/dev/null)
+            STATUS=$(echo "$RESULT" | jq -r '.data.deployments.edges[0].node.status')
+            echo "Attempt $i: status=$STATUS"
+
+            case "$STATUS" in
+              CRASHED|FAILED|REMOVED)
+                echo "::error::${{ matrix.service.name }} deploy failed: $STATUS"
+                exit 1
+                ;;
+              SUCCESS)
+                echo "${{ matrix.service.name }} deployed successfully"
+                exit 0
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::warning::${{ matrix.service.name }} did not reach SUCCESS within 180s"
