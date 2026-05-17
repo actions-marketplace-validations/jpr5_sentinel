@@ -3,6 +3,7 @@
 require "sinatra"
 require "json"
 require_relative "config"
+require_relative "github_app_auth"
 require_relative "state"
 require_relative "pr_writer"
 
@@ -65,8 +66,13 @@ get "/adopt" do
     halt 400, "Missing token parameter" unless token_param
     halt 403, "Invalid or expired token" unless valid_token?(token_param, repo, "adopt")
 
-    bot_token = ENV["GITHUB_TOKEN"]
-    halt 500, "Bot not configured (missing GITHUB_TOKEN)" unless bot_token
+    if ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"]
+        auth = Bot::GitHubAppAuth.new
+        bot_token = auth.token_for(repo) || ENV["GITHUB_TOKEN"]
+    else
+        bot_token = ENV["GITHUB_TOKEN"]
+    end
+    halt 500, "Bot not configured (missing credentials)" unless bot_token
 
     writer = Bot::PrWriter.new(token: bot_token)
 
