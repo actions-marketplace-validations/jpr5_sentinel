@@ -16,7 +16,7 @@ require_relative "pr_writer"
 
 module Bot
     class ScannerBot
-        def initialize(token: nil, pattern: "rotate", dry_run: false)
+        def initialize(token: nil, pattern: "rotate", dry_run: false, limit: nil)
             if ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"]
                 @auth = GitHubAppAuth.new
                 @token = token || ENV["GITHUB_TOKEN"]
@@ -34,6 +34,7 @@ module Bot
             @scanner = build_scanner
             @pattern = pattern
             @dry_run = dry_run
+            @limit = limit
             @summary = { scanned: 0, findings: 0, prs_opened: 0, skipped: 0, errors: 0 }
         end
 
@@ -46,6 +47,8 @@ module Bot
             $stderr.puts "Found #{candidates.length} candidate repos"
 
             candidates.each do |repo|
+                break if @limit && @summary[:scanned] >= @limit
+
                 if @state.rate_limit_reached?
                     $stderr.puts "Daily PR limit reached (#{Config::MAX_PRS_PER_DAY}), stopping"
                     break
@@ -392,7 +395,7 @@ end
 
 # CLI entry point
 if __FILE__ == $0
-    options = { pattern: "rotate", dry_run: false }
+    options = { pattern: "rotate", dry_run: false, limit: nil }
 
     OptionParser.new do |opts|
         opts.banner = "Usage: ruby bot/scanner_bot.rb [options]"
@@ -406,6 +409,10 @@ if __FILE__ == $0
 
         opts.on("--dry-run", "Don't create PRs, just log what would happen") do
             options[:dry_run] = true
+        end
+
+        opts.on("--limit N", Integer, "Max repos to scan (default: unlimited)") do |n|
+            options[:limit] = n
         end
 
         opts.on("-h", "--help", "Show this help message") do
