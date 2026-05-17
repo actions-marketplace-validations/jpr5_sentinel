@@ -97,6 +97,22 @@ jobs:
 Findings appear as inline annotations on the PR diff -- critical/high as errors,
 medium as warnings, low as notices.
 
+**Fix mode inputs:**
+
+| Name | Default | Description |
+|------|---------|-------------|
+| `fix` | `false` | Auto-fix findings. Pushes to PR branch, or creates fix PR on main. |
+| `anthropic-key` | -- | Anthropic API key -- enables AI-powered fixes for all 28 rules |
+
+**Fix mode outputs:**
+
+| Name | Description |
+|------|-------------|
+| `fixes-applied` | Number of findings auto-fixed |
+
+When `fix: true` on a **pull request**: fixes are pushed directly to the PR branch.
+When `fix: true` on **main/push**: a new `sentinel/fix-*` PR is created.
+
 ## Pre-commit Hook
 
 Scan workflow files automatically before every commit:
@@ -124,6 +140,38 @@ pre-commit:
 ```
 
 The hook only runs when `.github/workflows/*.yml` files are staged, so it won't slow down unrelated commits.
+
+## Policy-as-Code
+
+Define security standards in `.sentinel-ci.yml`:
+
+```yaml
+severity: high
+
+rules:
+  missing-timeouts: medium
+  overly-broad-triggers: "off"
+
+ignore:
+  - ".github/workflows/dependabot-*.yml"
+
+exceptions:
+  - rule: credential-window
+    file: publish-release.yml
+    reason: "Intentional late-injection pattern"
+```
+
+The scanner and GitHub Action both read this file automatically.
+
+## Platform Support
+
+Sentinel scans GitHub Actions (default), GitLab CI, and Bitbucket Pipelines:
+
+```bash
+sentinel scan --local . --platform auto     # detect automatically
+sentinel scan --local . --platform gitlab   # GitLab CI only
+sentinel scan --local . --platform bitbucket # Bitbucket only
+```
 
 ## What It Checks
 
@@ -160,29 +208,32 @@ The hook only runs when `.github/workflows/*.yml` files are staged, so it won't 
 
 ## Auto-Fix
 
-Sentinel can automatically generate fixes for three rule categories:
+Sentinel can automatically fix findings -- 6 rules mechanically, all 28 with AI:
 
 ```bash
-sentinel scan --fix owner/repo    # future CLI flag
+# Mechanical fixes (free, deterministic)
+sentinel fix --local .
+sentinel fix --local . --dry-run    # preview changes
+
+# All rules via Claude Opus
+sentinel fix --local . --ai
+
+# Fix a remote repo (creates a PR)
+sentinel fix owner/repo
 ```
 
-Or use the Ruby API directly:
-
-```ruby
-require_relative "lib/auto_fix"
-require_relative "lib/sha_resolver"
-
-resolver = ShaResolver.new
-patched = AutoFix.apply(finding, raw_yaml, sha_resolver: resolver)
-```
-
-**Fixable rules:**
+**Mechanically fixable rules:**
 
 | Rule | Fix Strategy |
 |------|-------------|
 | `unpinned-actions` | Resolves tag to SHA via GitHub API |
 | `shell-injection-expr` | Moves expression to step-level `env:` block |
 | `missing-persist-credentials` | Adds `persist-credentials: false` to checkout |
+| `workflow-dispatch-injection` | Moves `${{ inputs.* }}` to step-level `env:` block |
+| `missing-permissions` | Adds `permissions: contents: read` at workflow level |
+| `missing-timeouts` | Adds `timeout-minutes: 30` to jobs |
+
+With `--ai`, Sentinel uses Claude Opus to fix all remaining rules that require understanding workflow intent.
 
 ## PR Bot
 
@@ -273,13 +324,18 @@ lib/
     bot.rb                      # sentinel bot subcommand
     hook.rb                     # sentinel hook install/uninstall
     deps.rb                     # sentinel deps subcommand
+    token_resolver.rb           # GitHub token lookup chain
   formatter/
     terminal.rb                 # colored terminal output
     json.rb                     # JSON output
     sarif.rb                    # SARIF output for GitHub Security tab
+  platforms/
+    gitlab.rb                   # GitLab CI pipeline scanner
+    bitbucket.rb                # Bitbucket Pipelines scanner
+    shared_patterns.rb          # cross-platform rule patterns
   rules/
     base.rb                     # abstract rule interface
-    *.rb                        # one file per rule (27 rules)
+    *.rb                        # one file per rule (26 rules)
 mcp/
   server.rb                     # MCP server for AI coding agents
   claude-code-config.json       # example configuration for Claude Code
@@ -287,8 +343,10 @@ bot/
   scanner_bot.rb                # PR bot orchestrator
   search.rb                     # GitHub Code Search client
   state.rb                      # JSON-file state tracking
+  state.json                    # persisted bot state
   pr_writer.rb                  # cross-fork PR creation
   config.rb                     # bot configuration
+  web.rb                        # bot web dashboard
 ```
 
 ## Adding Rules
