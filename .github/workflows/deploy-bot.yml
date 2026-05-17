@@ -25,11 +25,11 @@ jobs:
           - name: sentinel-bot
             image: sentinel-bot
             dockerfile: bot/Dockerfile
-            railway_id: "0c10c80f-8af0-4fdb-b38e-a69476ad8269"
+            railway_id: "d3dc2005-752e-49ce-b8dc-25f492f4ac22"
           - name: sentinel-web
             image: sentinel-web
             dockerfile: bot/Dockerfile.web
-            railway_id: "10b44b70-d3a2-4876-b81f-9a105a39b944"
+            railway_id: "7c3c2d5a-3ff5-4e15-b657-9803ac320f18"
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
