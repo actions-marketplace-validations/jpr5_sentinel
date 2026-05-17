@@ -19,25 +19,16 @@ class CloneClient
 
         @tmpdir = Dir.mktmpdir("sentinel-")
 
-        # Shallow sparse clone — only .github/ directory
-        success = system(
-            "git", "clone", "--depth", "1", "--filter=blob:none", "--sparse",
-            "https://github.com/#{repo}.git", @tmpdir,
-            [:out, :err] => File::NULL
-        )
+        success = try_clone(repo)
 
         unless success
             $stderr.puts ""
             $stderr.puts "ERROR: Could not access #{repo}"
             $stderr.puts ""
-            $stderr.puts "This repo may be private. To scan private repos:"
-            $stderr.puts ""
-            $stderr.puts "  export GITHUB_TOKEN=$(gh auth token)"
-            $stderr.puts "  sentinel scan #{repo}"
-            $stderr.puts ""
-            $stderr.puts "Or pass a token directly:"
-            $stderr.puts ""
-            $stderr.puts "  sentinel scan --token ghp_xxx #{repo}"
+            $stderr.puts "If this is a private repo, make sure git can authenticate:"
+            $stderr.puts "  - SSH key configured (git clone git@github.com:#{repo})"
+            $stderr.puts "  - Or: gh auth login"
+            $stderr.puts "  - Or: export GITHUB_TOKEN=$(gh auth token)"
             $stderr.puts ""
             exit 2
         end
@@ -62,5 +53,41 @@ class CloneClient
 
     def cleanup
         FileUtils.rm_rf(@tmpdir) if @tmpdir
+    end
+
+    private
+
+    CLONE_ARGS = %w[--depth 1 --filter=blob:none --sparse].freeze
+
+    def try_clone(repo)
+        # 1. HTTPS — works for public repos and if credential helper is configured
+        return true if try_url("https://github.com/#{repo}.git")
+
+        # 2. SSH — works if SSH key is configured
+        return true if try_url("git@github.com:#{repo}.git")
+
+        # 3. HTTPS with gh auth token — works if gh CLI is authenticated
+        token = detect_gh_token
+        if token
+            return true if try_url("https://x-access-token:#{token}@github.com/#{repo}.git")
+        end
+
+        false
+    end
+
+    def try_url(url)
+        FileUtils.rm_rf(Dir.children(@tmpdir)) if @tmpdir && File.directory?(@tmpdir)
+        system("git", "clone", *CLONE_ARGS, url, @tmpdir, [:out, :err] => File::NULL)
+    end
+
+    def detect_gh_token
+        return ENV["GITHUB_TOKEN"] if ENV["GITHUB_TOKEN"]
+
+        gh_path = `which gh 2>/dev/null`.strip
+        return nil if gh_path.empty?
+        return nil unless system("gh", "auth", "status", [:out, :err] => File::NULL)
+
+        token = `gh auth token 2>/dev/null`.strip
+        token.empty? ? nil : token
     end
 end
