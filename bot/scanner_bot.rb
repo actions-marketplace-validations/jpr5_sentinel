@@ -127,7 +127,6 @@ module Bot
             $stderr.puts "  Found #{critical_findings.length} critical findings"
 
             # Check for opt-out file
-            gh_client = GitHubClient.new(token: @token)
             if gh_client.file_exists?(repo[:full_name], Config::OPT_OUT_FILE)
                 opt_out_content = gh_client.fetch_file_content(repo[:full_name], Config::OPT_OUT_FILE)
                 if opt_out_content
@@ -145,45 +144,29 @@ module Bot
                 end
             end
 
-            # Group findings by rule for PR creation
-            findings_by_rule = critical_findings.group_by(&:rule)
-
-            findings_by_rule.each do |rule, rule_findings|
-                break if @state.rate_limit_reached?
-                next if @state.already_processed?(repo[:full_name], rule)
-                next unless Config::FIXABLE_RULES.include?(rule)
-
-                create_fix_pr(repo, rule, rule_findings)
-            end
-
-            # For non-fixable critical findings, create advisory PRs
-            findings_by_rule.each do |rule, rule_findings|
-                break if @state.rate_limit_reached?
-                next if @state.already_processed?(repo[:full_name], rule)
-                next if Config::FIXABLE_RULES.include?(rule) # already handled above
-
-                create_advisory_pr(repo, rule, rule_findings)
-            end
-        end
-
-        def create_fix_pr(repo, rule, findings)
-            first = findings.first
-            branch = "sentinel/fix-#{rule}"
-            title = "Security: Fix #{rule} in GitHub Actions workflows"
-
-            # Fetch workflow files and apply fixes
-            gh_client = GitHubClient.new(token: @token)
+            # Collect all fixes into one PR
             sha_resolver = ShaResolver.new(token: @token)
             fixed_files = {}
+            fixed_findings = []    # findings that were auto-fixed
+            advisory_findings = [] # findings that need manual review
 
-            findings.group_by(&:file).each do |file, file_findings|
+            critical_findings.group_by(&:file).each do |file, file_findings|
                 content = gh_client.fetch_file_content(repo[:full_name], ".github/workflows/#{file}")
                 next unless content
 
                 patched = content
                 file_findings.sort_by { |f| -(f.line || 0) }.each do |finding|
-                    result = AutoFix.apply(finding, patched, sha_resolver: sha_resolver)
-                    patched = result if result && result != patched
+                    if AutoFix.can_fix?(finding)
+                        result = AutoFix.apply(finding, patched, sha_resolver: sha_resolver)
+                        if result && result != patched
+                            patched = result
+                            fixed_findings << finding
+                        else
+                            advisory_findings << finding
+                        end
+                    else
+                        advisory_findings << finding
+                    end
                 end
 
                 if patched != content
@@ -191,26 +174,27 @@ module Bot
                 end
             end
 
-            if fixed_files.empty?
-                # Couldn't auto-fix, fall back to advisory
-                create_advisory_pr(repo, rule, findings)
+            # Nothing to do
+            if fixed_files.empty? && advisory_findings.empty?
+                $stderr.puts "  No actionable findings"
                 return
             end
 
-            body = build_pr_body(
+            # Build consolidated PR
+            total = fixed_findings.length + advisory_findings.length
+            branch = "sentinel/security-fixes"
+            title = "Security: Fix #{total} finding#{"s" if total != 1} in GitHub Actions workflows"
+
+            body = build_consolidated_pr_body(
                 repo: repo[:full_name],
-                rule: rule,
-                severity: first.severity.to_s,
-                findings: findings,
-                fix_description: "This PR applies automated fixes for the `#{rule}` vulnerability pattern.\n\n" \
-                    "All fixes are deterministic (no AI) — they apply the same transformations the scanner recommends.\n\n" \
-                    "**Please review the changes before merging.**"
+                fixed_findings: fixed_findings,
+                advisory_findings: advisory_findings
             )
 
             if @dry_run
-                $stderr.puts "  [DRY RUN] Would create fix PR: #{title}"
-                fixed_files.each { |path, _| $stderr.puts "    - #{path}" }
-                findings.each { |f| $stderr.puts "    - #{f.file}:#{f.line} #{f.message}" }
+                $stderr.puts "  [DRY RUN] Would create consolidated PR: #{title}"
+                fixed_findings.each { |f| $stderr.puts "    [fix] #{f.file}:#{f.line} #{f.rule}" }
+                advisory_findings.each { |f| $stderr.puts "    [advisory] #{f.file}:#{f.line} #{f.rule}" }
                 return
             end
 
@@ -221,138 +205,88 @@ module Bot
                 branch: branch,
                 title: title,
                 body: body,
-                files: fixed_files,
-            )
-
-            if pr
-                $stderr.puts "  Opened fix PR: #{pr["html_url"]}"
-                @state.record_pr(repo[:full_name], pr["html_url"], rule)
-                @summary[:prs_opened] += 1
-            else
-                $stderr.puts "  Failed to create fix PR, falling back to advisory"
-                create_advisory_pr(repo, rule, findings)
-            end
-        end
-
-        def create_advisory_pr(repo, rule, findings)
-            first = findings.first
-            branch = "sentinel/advisory-#{rule}"
-            title = "Security Advisory: #{rule} detected in GitHub Actions workflows"
-
-            body = build_pr_body(
-                repo: repo[:full_name],
-                rule: rule,
-                severity: first.severity.to_s,
-                findings: findings,
-                fix_description: "This is an advisory PR to raise awareness of a security issue.\n\n" \
-                    "**Recommended action:** Review the findings below and apply fixes manually.\n\n" \
-                    "Each finding includes a suggested fix in the details."
-            )
-
-            if @dry_run
-                $stderr.puts "  [DRY RUN] Would create advisory PR: #{title}"
-                findings.each { |f| $stderr.puts "    - #{f.file}:#{f.line} #{f.message}" }
-                return
-            end
-
-            # Create a minimal PR with a README-like advisory file
-            files = {
-                ".github/SECURITY_ADVISORY_#{rule.upcase.gsub("-", "_")}.md" => build_advisory_content(rule, findings),
-            }
-
-            repo_token = pr_token_for(repo[:full_name])
-            writer = PrWriter.new(token: repo_token)
-            pr = writer.create_pr(
-                repo: repo[:full_name],
-                branch: branch,
-                title: title,
-                body: body,
-                files: files,
+                files: fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files
             )
 
             if pr
                 $stderr.puts "  Opened PR: #{pr["html_url"]}"
-                @state.record_pr(repo[:full_name], pr["html_url"], rule)
+                # Record one PR per rule for state tracking
+                (fixed_findings + advisory_findings).map(&:rule).uniq.each do |rule|
+                    @state.record_pr(repo[:full_name], pr["html_url"], rule)
+                end
                 @summary[:prs_opened] += 1
             else
-                $stderr.puts "  Failed to create PR for #{rule}"
+                $stderr.puts "  Failed to create PR"
                 @summary[:errors] += 1
             end
         end
 
-        def build_pr_body(repo:, rule:, severity:, findings:, fix_description:)
-            finding_lines = findings.map { |f|
-                "- **#{f.file}** line #{f.line}: #{f.message}"
-            }.join("\n")
-
-            # Generate tokens for opt-out / adopt links
+        def build_consolidated_pr_body(repo:, fixed_findings:, advisory_findings:)
             opt_out_token = generate_token(repo, "opt-out")
             adopt_token = generate_token(repo, "adopt")
-
             encoded_repo = URI.encode_www_form_component(repo)
             opt_out_url = "#{Config::BOT_URL}/opt-out?repo=#{encoded_repo}&token=#{opt_out_token}"
             adopt_url = "#{Config::BOT_URL}/adopt?repo=#{encoded_repo}&token=#{adopt_token}"
 
-            <<~BODY
-            ## Security: Fix #{rule} in GitHub Actions workflows
+            total = fixed_findings.length + advisory_findings.length
+            rules_hit = (fixed_findings + advisory_findings).map(&:rule).uniq
 
-            ### What was found
+            body = "## Security: #{total} finding#{"s" if total != 1} across #{rules_hit.length} rule#{"s" if rules_hit.length != 1}\n\n"
 
-            **#{severity}: #{rule}** (#{findings.length} finding#{"s" if findings.length > 1})
-
-            #{finding_lines}
-
-            ### What this PR does
-
-            #{fix_description}
-
-            ### How this was detected
-
-            This finding was identified by deterministic pattern matching — no AI or machine learning was used in the detection. Sentinel uses static analysis rules that match known-vulnerable YAML patterns against a database of documented exploit vectors. Every finding maps to a specific, reproducible pattern. [Source code](https://github.com/jpr5/sentinel) is open for inspection.
-
-            ### Opt out
-
-            To stop receiving PRs from this bot:
-            - Close this PR (we won't re-open for this rule)
-            - Or add `.github/.sentinel-ci.yml` with `enabled: false`
-
-            ---
-            <sub>&#x1f6e1;&#xfe0f; This PR was generated by [Sentinel](https://sentinel.copilotkit.dev), an open-source security scanner. [Why this PR?](https://medium.com/@jordanritter/security-hardening-github-workflows-at-scale-d291a33774e1) · Free, no tracking</sub>
-
-            [&#x2705; Add Sentinel to this repo](#{adopt_url}) · [&#x1f6ab; Opt out of future PRs](#{opt_out_url})
-            BODY
-        end
-
-        def build_advisory_content(rule, findings)
-            lines = ["# Security Advisory: #{rule}\n\n"]
-            lines << "This file was added by [sentinel](https://github.com/jpr5/sentinel) "
-            lines << "to raise awareness of a security issue in your GitHub Actions workflows.\n\n"
-            lines << "## Findings\n\n"
-
-            findings.each do |f|
-                lines << "### #{f.file} (line #{f.line})\n\n"
-                lines << "**Severity:** #{f.severity}\n"
-                lines << "**Message:** #{f.message}\n"
-                lines << "**Suggested fix:** #{f.fix}\n\n" if f.fix
+            if fixed_findings.any?
+                body += "### Fixed (deterministic, no AI)\n\n"
+                fixed_findings.group_by(&:rule).each do |rule, findings|
+                    body += "**#{rule}**\n"
+                    findings.each { |f| body += "- `#{f.file}` line #{f.line}: #{f.message}\n" }
+                    body += "\n"
+                end
             end
 
-            lines << "\n## How this was detected\n\n"
-            lines << "This finding was identified by deterministic pattern matching — no AI or machine learning "
-            lines << "was used in the detection. Sentinel uses static analysis rules that match known-vulnerable "
-            lines << "YAML patterns against a database of documented exploit vectors. Every finding maps to a "
-            lines << "specific, reproducible pattern. [Source code](https://github.com/jpr5/sentinel) is open for inspection.\n\n"
-            lines << "## What to do\n\n"
-            lines << "1. Review the findings above\n"
-            lines << "2. Apply the suggested fixes to your workflow files\n"
-            lines << "3. Delete this file\n"
-            lines << "4. Merge or close this PR\n"
-            lines << "\n---\n"
-            lines << "<sub>&#x1f6e1;&#xfe0f; This advisory was generated by [Sentinel](https://sentinel.copilotkit.dev), "
-            lines << "an open-source security scanner. "
-            lines << "[Why this advisory?](https://medium.com/@jordanritter/security-hardening-github-workflows-at-scale-d291a33774e1) · "
-            lines << "Free, no tracking</sub>\n"
+            if advisory_findings.any?
+                body += "### Requires manual review\n\n"
+                advisory_findings.group_by(&:rule).each do |rule, findings|
+                    body += "**#{rule}**\n"
+                    findings.each do |f|
+                        body += "- `#{f.file}` line #{f.line}: #{f.message}\n"
+                        body += "  - Fix: #{f.fix}\n" if f.fix
+                    end
+                    body += "\n"
+                end
+            end
 
-            lines.join
+            body += "### How this was detected\n\n"
+            body += "This finding was identified by deterministic pattern matching — no AI or machine learning "
+            body += "was used in the detection. Sentinel uses static analysis rules that match known-vulnerable "
+            body += "YAML patterns against a database of documented exploit vectors. Every finding maps to a "
+            body += "specific, reproducible pattern. [Source code](https://github.com/jpr5/sentinel) is open for inspection.\n\n"
+
+            body += "---\n"
+            body += "<sub>&#x1f6e1;&#xfe0f; This PR was generated by [Sentinel](https://sentinel.copilotkit.dev), "
+            body += "an open-source security scanner. "
+            body += "[Why this PR?](https://medium.com/@jordanritter/security-hardening-github-workflows-at-scale-d291a33774e1) · "
+            body += "Free, no tracking</sub>\n\n"
+            body += "[&#x2705; Add Sentinel to this repo](#{adopt_url}) · "
+            body += "[&#x1f6ab; Opt out of future PRs](#{opt_out_url})\n"
+
+            body
+        end
+
+        def advisory_only_files(findings)
+            content = "# Security Advisory\n\n"
+            content += "Sentinel detected #{findings.length} security finding#{"s" if findings.length != 1} "
+            content += "in your GitHub Actions workflows that require manual review.\n\n"
+
+            findings.group_by(&:rule).each do |rule, rule_findings|
+                content += "## #{rule}\n\n"
+                rule_findings.each do |f|
+                    content += "### #{f.file} (line #{f.line})\n\n"
+                    content += "**Severity:** #{f.severity}\n"
+                    content += "**Issue:** #{f.message}\n"
+                    content += "**Fix:** #{f.fix}\n\n" if f.fix
+                end
+            end
+
+            { ".github/SECURITY_ADVISORY.md" => content }
         end
 
         def generate_token(repo, action)
