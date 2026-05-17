@@ -15,5 +15,6 @@ module Bot
 
         OPT_OUT_FILE = ".github/.sentinel-ci.yml"
         STATE_FILE = "bot/state.json"
+        BOT_URL = ENV["SENTINEL_BOT_URL"] || "https://sentinel-bot.copilotkit.dev"
     end
 end

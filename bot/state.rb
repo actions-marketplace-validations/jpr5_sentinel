@@ -63,6 +63,25 @@ module Bot
             @data["opt_outs"].include?(repo_name)
         end
 
+        def record_token(token, repo, action)
+            @data["tokens"] ||= {}
+            @data["tokens"][token] = {
+                "repo" => repo,
+                "action" => action,
+                "created_at" => Time.now.utc.iso8601,
+            }
+        end
+
+        def valid_token?(token, repo, action)
+            entry = @data.dig("tokens", token)
+            return false unless entry
+            entry["repo"] == repo && entry["action"] == action
+        end
+
+        def consume_token(token)
+            @data["tokens"]&.delete(token)
+        end
+
         def prs_opened_today
             today = Time.now.utc.strftime("%Y-%m-%d")
             @data["prs"].count { |pr| pr["timestamp"]&.start_with?(today) }
@@ -88,6 +107,12 @@ module Bot
             @data["repos"].delete_if { |_, v|
                 v["last_scanned_at"] && v["last_scanned_at"] < cutoff && v["status"] == "scanned"
             }
+            prune_tokens
+        end
+
+        def prune_tokens(max_age_days: 30)
+            cutoff = (Time.now.utc - max_age_days * 86400).iso8601
+            @data["tokens"]&.delete_if { |_, v| v["created_at"] && v["created_at"] < cutoff }
         end
     end
 end
