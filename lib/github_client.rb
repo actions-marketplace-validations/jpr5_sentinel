@@ -49,8 +49,7 @@ class GitHubClient
     end
 
     def file_exists?(repo, path)
-        api_get("/repos/#{repo}/contents/#{path}")
-        true
+        !api_get("/repos/#{repo}/contents/#{path}").nil?
     rescue StandardError
         false
     end
