@@ -5,33 +5,40 @@ on:
     paths:
       - 'bot/**'
       - 'lib/**'
-      - 'bot/Dockerfile'
   workflow_dispatch:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: railway
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
-          node-version: '20'
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      - name: Build and push bot image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: bot/Dockerfile
+          push: true
+          tags: ghcr.io/jpr5/sentinel-bot:latest
 
-      - name: Deploy bot to Railway
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_BOT_TOKEN }}
-        run: |
-          cd bot
-          railway up --service sentinel-bot --detach
+      - name: Build and push web image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: bot/Dockerfile.web
+          push: true
+          tags: ghcr.io/jpr5/sentinel-web:latest
