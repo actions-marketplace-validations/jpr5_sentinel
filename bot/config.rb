@@ -3,7 +3,7 @@ module Bot
         MIN_STARS = 100
         MAX_PRS_PER_DAY = 50
         FIXABLE_RULES = %w[unpinned-actions shell-injection-expr missing-persist-credentials workflow-dispatch-injection missing-permissions missing-timeouts].freeze
-        CRITICAL_RULES = %w[unpinned-actions shell-injection-expr shell-injection-jq dangerous-triggers].freeze
+        CRITICAL_RULES = %w[shell-injection-expr shell-injection-jq dangerous-triggers github-script-injection hardcoded-secrets].freeze
 
         SEARCH_QUERIES = [
             { pattern: "shell-injection", query: '"${{ github.event.pull_request.title }}" path:.github/workflows language:YAML' },

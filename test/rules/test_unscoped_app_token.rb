@@ -20,7 +20,7 @@ class TestUnscopedAppToken < Minitest::Test
         wf = Workflow.new(filename: "release.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :high, findings.first.severity
+        assert_equal :medium, findings.first.severity
         assert_equal "unscoped-app-token", findings.first.rule
     end
 
@@ -76,6 +76,6 @@ class TestUnscopedAppToken < Minitest::Test
         wf = Workflow.new(filename: "release.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :high, findings.first.severity
+        assert_equal :medium, findings.first.severity
     end
 end

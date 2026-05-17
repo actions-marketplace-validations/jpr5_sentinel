@@ -20,7 +20,7 @@ class TestExcessivePermissions < Minitest::Test
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :medium, findings.first.severity
+        assert_equal :low, findings.first.severity
         assert_equal "excessive-permissions", findings.first.rule
         assert_match(/contents: write/, findings.first.message)
     end

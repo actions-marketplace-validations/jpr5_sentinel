@@ -2,7 +2,7 @@ module Rules
     class MissingTimeouts < Base
         def name = "missing-timeouts"
         def description = "Job without timeout-minutes"
-        def severity = :medium
+        def severity = :low
 
         def check(workflow)
             findings = []

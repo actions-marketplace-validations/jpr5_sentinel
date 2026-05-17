@@ -2,7 +2,7 @@ module Rules
     class DockerBuildArgSecrets < Base
         def name = "docker-build-arg-secrets"
         def description = "Secrets passed as Docker build-args (visible in image layers)"
-        def severity = :high
+        def severity = :medium
 
         def check(workflow)
             findings = []

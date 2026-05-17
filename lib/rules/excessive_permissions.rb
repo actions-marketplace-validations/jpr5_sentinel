@@ -2,7 +2,7 @@ module Rules
     class ExcessivePermissions < Base
         def name = "excessive-permissions"
         def description = "Job has write permissions but no steps that appear to need them"
-        def severity = :medium
+        def severity = :low
 
         # Actions that perform write operations
         WRITE_ACTIONS = [

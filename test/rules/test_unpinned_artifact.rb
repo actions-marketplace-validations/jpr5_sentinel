@@ -18,7 +18,7 @@ class TestUnpinnedArtifact < Minitest::Test
         wf = Workflow.new(filename: "deploy.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :medium, findings.first.severity
+        assert_equal :low, findings.first.severity
         assert_equal "unpinned-artifact", findings.first.rule
         assert_match(/without specific name/, findings.first.message)
     end
@@ -55,7 +55,7 @@ class TestUnpinnedArtifact < Minitest::Test
         wf = Workflow.new(filename: "deploy.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :medium, findings.first.severity
+        assert_equal :low, findings.first.severity
         assert_match(/without specific name/, findings.first.message)
     end
 

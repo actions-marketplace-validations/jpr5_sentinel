@@ -177,30 +177,30 @@ sentinel scan --local . --platform bitbucket # Bitbucket only
 
 | # | Rule | Severity | What |
 |---|------|----------|------|
-| 1 | `unpinned-actions` | critical/medium | Tag-pinned actions (critical for third-party, medium for `actions/*`) |
+| 1 | `unpinned-actions` | medium/low | Tag-pinned actions (medium for third-party, low for `actions/*`) |
 | 2 | `shell-injection-expr` | critical | Attacker-controllable `${{ }}` in `run:` blocks |
 | 3 | `shell-injection-jq` | critical | `${VAR}` in double-quoted jq/curl strings |
 | 4 | `hardcoded-secrets` | critical | AWS keys, GitHub PATs, private keys, passwords in plain text |
-| 5 | `self-hosted-runner-fork` | critical | Self-hosted runner on fork PR triggers |
+| 5 | `self-hosted-runner-fork` | high | Self-hosted runner on fork PR triggers |
 | 6 | `github-script-injection` | critical | Attacker-controllable `${{ }}` in github-script |
 | 7 | `dangerous-triggers` | critical | `pull_request_target` + fork code checkout |
 | 8 | `missing-persist-credentials` | high | `actions/checkout` without `persist-credentials: false` |
 | 9 | `credential-window` | high | Git credentials configured far from push step |
-| 10 | `static-aws-credentials` | high | Static AWS keys instead of OIDC federation |
-| 11 | `unscoped-app-token` | high | `create-github-app-token` without `permission-*` scoping |
-| 12 | `docker-build-arg-secrets` | high | Secrets in Docker build-args (visible in image layers) |
+| 10 | `static-aws-credentials` | medium | Static AWS keys instead of OIDC federation |
+| 11 | `unscoped-app-token` | medium | `create-github-app-token` without `permission-*` scoping |
+| 12 | `docker-build-arg-secrets` | medium | Secrets in Docker build-args (visible in image layers) |
 | 13 | `build-publish-same-job` | high | Build + publish in same job with publish secrets |
 | 14 | `curl-pipe-shell` | high | `curl \| sh` without integrity verification |
 | 15 | `workflow-dispatch-injection` | high | `${{ inputs.* }}` in run blocks |
 | 16 | `missing-permissions` | medium | No top-level permissions block |
-| 17 | `git-config-global` | medium | `git config --global` with credentials |
-| 18 | `missing-timeouts` | medium | Jobs without `timeout-minutes` |
+| 17 | `git-config-global` | low | `git config --global` with credentials |
+| 18 | `missing-timeouts` | low | Jobs without `timeout-minutes` |
 | 19 | `missing-env-protection` | medium | Publish/deploy jobs without environment protection |
 | 20 | `allow-forks-artifact` | medium | Fork-produced artifact download in privileged context |
 | 21 | `missing-frozen-lockfile` | medium | Package install without `--frozen-lockfile` / `npm ci` |
 | 22 | `cache-poisoning` | medium | Cache keys with fork-controllable refs |
-| 23 | `excessive-permissions` | medium | Write permissions on jobs that only read |
-| 24 | `unpinned-artifact` | medium | download-artifact without specific name |
+| 23 | `excessive-permissions` | low | Write permissions on jobs that only read |
+| 24 | `unpinned-artifact` | low | download-artifact without specific name |
 | 25 | `unpinned-docker-image` | low | Docker images using `:latest` tag |
 | 26 | `overly-broad-triggers` | low | Push/PR triggers without branch/path filters |
 | 27 | `missing-dependabot` | low | No Dependabot config for github-actions ecosystem |

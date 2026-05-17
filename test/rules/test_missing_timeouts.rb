@@ -17,7 +17,7 @@ class TestMissingTimeouts < Minitest::Test
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :medium, findings.first.severity
+        assert_equal :low, findings.first.severity
         assert_match(/no timeout-minutes/, findings.first.message)
     end
 

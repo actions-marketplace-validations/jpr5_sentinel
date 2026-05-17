@@ -2,7 +2,7 @@ module Rules
     class UnpinnedActions < Base
         def name = "unpinned-actions"
         def description = "Action referenced by tag instead of SHA pin"
-        def severity = :critical
+        def severity = :medium
 
         SHA_PATTERN = /@[0-9a-f]{40}\b/
         FIRST_PARTY = %w[actions/ github/].freeze
@@ -17,7 +17,7 @@ module Rules
                 next if uses.match?(SHA_PATTERN)
 
                 first_party = FIRST_PARTY.any? { |prefix| uses.start_with?(prefix) }
-                sev = first_party ? :medium : :critical
+                sev = first_party ? :low : :medium
 
                 findings << Finding.new(
                     rule: name,

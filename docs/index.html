@@ -1290,8 +1290,8 @@
               <tr>
                 <td>1</td>
                 <td>unpinned-actions</td>
-                <td><span class="sev-critical">critical</span>/<span class="sev-medium">medium</span></td>
-                <td>Tag-pinned actions (critical for third-party, medium for actions/*)</td>
+                <td><span class="sev-medium">medium</span>/<span class="sev-low">low</span></td>
+                <td>Tag-pinned actions (medium for third-party, low for actions/*)</td>
               </tr>
               <tr>
                 <td>2</td>
@@ -1314,7 +1314,7 @@
               <tr>
                 <td>5</td>
                 <td>self-hosted-runner-fork</td>
-                <td><span class="sev-critical">critical</span></td>
+                <td><span class="sev-high">high</span></td>
                 <td>Self-hosted runner on fork PR triggers</td>
               </tr>
               <tr>
@@ -1344,19 +1344,19 @@
               <tr>
                 <td>10</td>
                 <td>static-aws-credentials</td>
-                <td><span class="sev-high">high</span></td>
+                <td><span class="sev-medium">medium</span></td>
                 <td>Static AWS keys instead of OIDC federation</td>
               </tr>
               <tr>
                 <td>11</td>
                 <td>unscoped-app-token</td>
-                <td><span class="sev-high">high</span></td>
+                <td><span class="sev-medium">medium</span></td>
                 <td><code>create-github-app-token</code> without permission scoping</td>
               </tr>
               <tr>
                 <td>12</td>
                 <td>docker-build-arg-secrets</td>
-                <td><span class="sev-high">high</span></td>
+                <td><span class="sev-medium">medium</span></td>
                 <td>Secrets in Docker build-args (visible in image layers)</td>
               </tr>
               <tr>
@@ -1386,13 +1386,13 @@
               <tr>
                 <td>17</td>
                 <td>git-config-global</td>
-                <td><span class="sev-medium">medium</span></td>
+                <td><span class="sev-low">low</span></td>
                 <td><code>git config --global</code> with credentials</td>
               </tr>
               <tr>
                 <td>18</td>
                 <td>missing-timeouts</td>
-                <td><span class="sev-medium">medium</span></td>
+                <td><span class="sev-low">low</span></td>
                 <td>Jobs without <code>timeout-minutes</code></td>
               </tr>
               <tr>
@@ -1422,13 +1422,13 @@
               <tr>
                 <td>23</td>
                 <td>excessive-permissions</td>
-                <td><span class="sev-medium">medium</span></td>
+                <td><span class="sev-low">low</span></td>
                 <td>Write permissions on jobs that only read</td>
               </tr>
               <tr>
                 <td>24</td>
                 <td>unpinned-artifact</td>
-                <td><span class="sev-medium">medium</span></td>
+                <td><span class="sev-low">low</span></td>
                 <td>download-artifact without specific name</td>
               </tr>
               <tr>

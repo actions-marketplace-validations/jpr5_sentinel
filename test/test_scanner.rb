@@ -84,7 +84,8 @@ class TestScanner < Minitest::Test
             build:
               runs-on: ubuntu-latest
               steps:
-                - uses: pnpm/action-setup@v4
+                - name: Greet
+                  run: echo "${{ github.event.pull_request.title }}"
         YAML
 
         write_dependabot

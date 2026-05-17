@@ -2,7 +2,7 @@ module Rules
     class SelfHostedRunnerFork < Base
         def name = "self-hosted-runner-fork"
         def description = "Self-hosted runner exposed to fork PRs"
-        def severity = :critical
+        def severity = :high
 
         FORK_TRIGGERS = %w[pull_request pull_request_target].freeze
 

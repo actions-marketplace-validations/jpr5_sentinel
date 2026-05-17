@@ -2,7 +2,7 @@ module Rules
     class UnpinnedArtifact < Base
         def name = "unpinned-artifact"
         def description = "download-artifact without specific artifact name"
-        def severity = :medium
+        def severity = :low
 
         DOWNLOAD_ARTIFACT_PATTERN = /\bactions\/download-artifact\b/
 

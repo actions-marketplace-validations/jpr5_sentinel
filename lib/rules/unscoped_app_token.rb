@@ -2,7 +2,7 @@ module Rules
     class UnscopedAppToken < Base
         def name = "unscoped-app-token"
         def description = "GitHub App token without scoped permissions"
-        def severity = :high
+        def severity = :medium
 
         def check(workflow)
             findings = []

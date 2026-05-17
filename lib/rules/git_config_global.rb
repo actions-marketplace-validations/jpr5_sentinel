@@ -2,7 +2,7 @@ module Rules
     class GitConfigGlobal < Base
         def name = "git-config-global"
         def description = "git config --global persists credentials beyond the repo clone"
-        def severity = :medium
+        def severity = :low
 
         def check(workflow)
             findings = []

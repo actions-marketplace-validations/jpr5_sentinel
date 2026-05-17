@@ -2,7 +2,7 @@ module Rules
     class StaticAwsCredentials < Base
         def name = "static-aws-credentials"
         def description = "AWS credentials using static keys instead of OIDC"
-        def severity = :high
+        def severity = :medium
 
         def check(workflow)
             findings = []

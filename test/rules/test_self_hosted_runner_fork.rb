@@ -18,7 +18,7 @@ class TestSelfHostedRunnerFork < Minitest::Test
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :critical, findings.first.severity
+        assert_equal :high, findings.first.severity
         assert_match(/self-hosted.*pull_request/i, findings.first.message)
     end
 

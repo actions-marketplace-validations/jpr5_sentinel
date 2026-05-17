@@ -17,7 +17,7 @@ class TestUnpinnedActions < Minitest::Test
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :critical, findings.first.severity
+        assert_equal :medium, findings.first.severity
     end
 
     def test_sha_pinned_action_no_flag
@@ -62,7 +62,7 @@ class TestUnpinnedActions < Minitest::Test
         assert_empty findings
     end
 
-    def test_first_party_severity_medium
+    def test_first_party_severity_low
         yaml = <<~YAML
           on: push
           jobs:
@@ -74,10 +74,10 @@ class TestUnpinnedActions < Minitest::Test
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :medium, findings.first.severity
+        assert_equal :low, findings.first.severity
     end
 
-    def test_github_first_party_severity_medium
+    def test_github_first_party_severity_low
         yaml = <<~YAML
           on: push
           jobs:
@@ -89,7 +89,7 @@ class TestUnpinnedActions < Minitest::Test
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
         assert_equal 1, findings.length
-        assert_equal :medium, findings.first.severity
+        assert_equal :low, findings.first.severity
     end
 
     def test_multiple_actions_mixed
@@ -106,11 +106,11 @@ class TestUnpinnedActions < Minitest::Test
         YAML
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
-        # pnpm/action-setup@v4 -> critical, actions/setup-node@v4 -> medium
+        # pnpm/action-setup@v4 -> medium, actions/setup-node@v4 -> low
         assert_equal 2, findings.length
         severities = findings.map(&:severity)
-        assert_includes severities, :critical
         assert_includes severities, :medium
+        assert_includes severities, :low
     end
 
     def test_rule_name
@@ -118,6 +118,6 @@ class TestUnpinnedActions < Minitest::Test
     end
 
     def test_rule_severity
-        assert_equal :critical, @rule.severity
+        assert_equal :medium, @rule.severity
     end
 end
