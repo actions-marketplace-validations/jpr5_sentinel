@@ -1,7 +1,7 @@
 FROM ruby:3.3-alpine
 
 RUN apk add --no-cache git
-RUN gem install sinatra --no-doc
+RUN gem install sinatra rackup puma --no-doc
 
 COPY lib/ /sentinel/lib/
 COPY bot/ /sentinel/bot/
