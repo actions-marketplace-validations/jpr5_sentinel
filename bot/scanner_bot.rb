@@ -236,7 +236,7 @@ module Bot
             if fixed_findings.any?
                 body += "### Fixed (deterministic, no AI)\n\n"
                 fixed_findings.group_by(&:rule).each do |rule, findings|
-                    body += "**#{rule}**\n"
+                    body += "**#{rule}** — [What is this?](#{Config::BOT_URL}/rules/#{rule})\n"
                     findings.each { |f| body += "- `#{f.file}` line #{f.line}: #{f.message}\n" }
                     body += "\n"
                 end
@@ -245,7 +245,7 @@ module Bot
             if advisory_findings.any?
                 body += "### Requires manual review\n\n"
                 advisory_findings.group_by(&:rule).each do |rule, findings|
-                    body += "**#{rule}**\n"
+                    body += "**#{rule}** — [What is this?](#{Config::BOT_URL}/rules/#{rule})\n"
                     findings.each do |f|
                         body += "- `#{f.file}` line #{f.line}: #{f.message}\n"
                         body += "  - Fix: #{f.fix}\n" if f.fix
