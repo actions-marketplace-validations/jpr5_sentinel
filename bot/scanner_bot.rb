@@ -4,6 +4,8 @@ require "optparse"
 require "json"
 require "yaml"
 require_relative "../lib/scanner"
+require_relative "../lib/auto_fix"
+require_relative "../lib/sha_resolver"
 require_relative "config"
 require_relative "search"
 require_relative "state"
@@ -133,25 +135,64 @@ module Bot
             branch = "sentinel/fix-#{rule}"
             title = "Security: Fix #{rule} in GitHub Actions workflows"
 
+            # Fetch workflow files and apply fixes
+            gh_client = GitHubClient.new(token: @token)
+            sha_resolver = ShaResolver.new(token: @token)
+            fixed_files = {}
+
+            findings.group_by(&:file).each do |file, file_findings|
+                content = gh_client.fetch_file_content(repo[:full_name], ".github/workflows/#{file}")
+                next unless content
+
+                patched = content
+                file_findings.sort_by { |f| -(f.line || 0) }.each do |finding|
+                    result = AutoFix.apply(finding, patched, sha_resolver: sha_resolver)
+                    patched = result if result && result != patched
+                end
+
+                if patched != content
+                    fixed_files[".github/workflows/#{file}"] = patched
+                end
+            end
+
+            if fixed_files.empty?
+                # Couldn't auto-fix, fall back to advisory
+                create_advisory_pr(repo, rule, findings)
+                return
+            end
+
             body = build_pr_body(
                 rule: rule,
                 severity: first.severity.to_s,
                 findings: findings,
-                fix_description: "This PR applies automated fixes for the #{rule} vulnerability pattern.\n\n" \
-                    "**Note:** Please review the changes carefully before merging. " \
-                    "Automated fixes may need adjustment for your specific workflow configuration."
+                fix_description: "This PR applies automated fixes for the `#{rule}` vulnerability pattern.\n\n" \
+                    "All fixes are deterministic (no AI) — they apply the same transformations the scanner recommends.\n\n" \
+                    "**Please review the changes before merging.**"
             )
 
             if @dry_run
-                $stderr.puts "  [DRY RUN] Would create PR: #{title}"
+                $stderr.puts "  [DRY RUN] Would create fix PR: #{title}"
+                fixed_files.each { |path, _| $stderr.puts "    - #{path}" }
                 findings.each { |f| $stderr.puts "    - #{f.file}:#{f.line} #{f.message}" }
                 return
             end
 
-            # For now, create advisory-only PRs (auto_fix.rb integration is future work)
-            # When auto_fix.rb exists, it would generate the fixed file contents here
-            $stderr.puts "  Creating advisory PR for #{rule} (automated fixes coming soon)"
-            create_advisory_pr(repo, rule, findings)
+            pr = @pr_writer.create_pr(
+                repo: repo[:full_name],
+                branch: branch,
+                title: title,
+                body: body,
+                files: fixed_files,
+            )
+
+            if pr
+                $stderr.puts "  Opened fix PR: #{pr["html_url"]}"
+                @state.record_pr(repo[:full_name], pr["html_url"], rule)
+                @summary[:prs_opened] += 1
+            else
+                $stderr.puts "  Failed to create fix PR, falling back to advisory"
+                create_advisory_pr(repo, rule, findings)
+            end
         end
 
         def create_advisory_pr(repo, rule, findings)
@@ -224,7 +265,7 @@ module Bot
             - Or add `.github/.sentinel-ci.yml` with `enabled: false`
 
             ---
-            *[sentinel](https://github.com/jpr5/sentinel) | [Report false positive](https://github.com/jpr5/sentinel/issues)*
+            <sub>🛡️ Scanned and fixed by [Sentinel](https://sentinel.copilotkit.dev) — deterministic CI/CD security scanner. 28 rules, auto-fix engine, zero false confidence. [Add to your repo](https://github.com/jpr5/sentinel) · Built by [CopilotKit](https://copilotkit.dev)</sub>
             BODY
         end
 
@@ -246,6 +287,10 @@ module Bot
             lines << "2. Apply the suggested fixes to your workflow files\n"
             lines << "3. Delete this file\n"
             lines << "4. Merge or close this PR\n"
+            lines << "\n---\n"
+            lines << "<sub>🛡️ Detected by [Sentinel](https://sentinel.copilotkit.dev) — deterministic CI/CD security scanner. "
+            lines << "28 rules across GitHub Actions, GitLab CI, and Bitbucket Pipelines. "
+            lines << "[Add to your repo](https://github.com/jpr5/sentinel) · Built by [CopilotKit](https://copilotkit.dev)</sub>\n"
 
             lines.join
         end
