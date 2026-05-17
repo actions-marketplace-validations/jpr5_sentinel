@@ -104,7 +104,7 @@ module Bot
             gh_client = GitHubClient.new(token: @token)
             sentinel_config = gh_client.file_exists?(repo[:full_name], ".github/.sentinel-ci.yml")
             workflows = gh_client.fetch_workflows(repo[:full_name])
-            sentinel_workflow = workflows.any? { |w| w[:content]&.include?("jpr5/sentinel") }
+            sentinel_workflow = workflows.any? { |w| w[:content]&.match?(/uses:\s*jpr5\/sentinel/) }
             if sentinel_config || sentinel_workflow
                 $stderr.puts "  Already uses Sentinel, skipping"
                 @summary[:skipped] += 1
