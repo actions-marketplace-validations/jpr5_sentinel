@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 (2026-05-17)
+
+- Smart clone auth: try HTTPS, SSH, then gh token — no manual GITHUB_TOKEN needed for private repos
+
 ## 1.0.0 (2026-05-16)
 
 ### New Features
