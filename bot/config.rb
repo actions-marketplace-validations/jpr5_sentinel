@@ -2,7 +2,7 @@ module Bot
     module Config
         MIN_STARS = 100
         MAX_PRS_PER_DAY = 50
-        FIXABLE_RULES = %w[unpinned-actions shell-injection-expr missing-persist-credentials].freeze
+        FIXABLE_RULES = %w[unpinned-actions shell-injection-expr missing-persist-credentials workflow-dispatch-injection missing-permissions missing-timeouts].freeze
         CRITICAL_RULES = %w[unpinned-actions shell-injection-expr shell-injection-jq dangerous-triggers].freeze
 
         SEARCH_QUERIES = [
@@ -14,7 +14,7 @@ module Bot
         ].freeze
 
         OPT_OUT_FILE = ".github/.sentinel-ci.yml"
-        STATE_FILE = "bot/state.json"
+        STATE_FILE = ENV["SENTINEL_STATE_PATH"] || "bot/state.json"
         BOT_URL = ENV["SENTINEL_BOT_URL"] || "https://sentinel-bot.copilotkit.dev"
     end
 end
