@@ -5,6 +5,7 @@ require "json"
 require "yaml"
 require "securerandom"
 require "uri"
+require "time"
 require_relative "../lib/scanner"
 require_relative "../lib/auto_fix"
 require_relative "../lib/sha_resolver"
@@ -14,6 +15,7 @@ require_relative "search"
 require_relative "state"
 require_relative "pr_writer"
 require_relative "queue"
+require_relative "sync"
 
 module Bot
     class ScannerBot
@@ -42,6 +44,8 @@ module Bot
         end
 
         def run
+            sync_pr_statuses
+
             query = select_query
             $stderr.puts "Bot run: pattern=#{query[:pattern]} dry_run=#{@dry_run}"
             $stderr.puts "Query: #{query[:query]}"
@@ -257,7 +261,7 @@ module Bot
                 $stderr.puts "  Opened PR: #{pr["html_url"]}"
                 # Record one PR per rule for state tracking
                 (fixed_findings + advisory_findings).map(&:rule).uniq.each do |rule|
-                    @state.record_pr(repo[:full_name], pr["html_url"], rule)
+                    @state.record_pr(repo[:full_name], pr["html_url"], rule, pr["number"])
                 end
                 @summary[:prs_opened] += 1
             else
@@ -353,6 +357,14 @@ module Bot
             end
         end
 
+        def sync_pr_statuses
+            sync = Sync.new(token: @token, state: @state)
+            result = sync.sync_all
+            $stderr.puts "Pre-scan sync: #{result[:synced]} PRs checked, #{result[:updated]} updated"
+        rescue => e
+            $stderr.puts "PR sync failed (non-fatal): #{e.message}"
+        end
+
         def print_summary
             s = @summary
             $stderr.puts
@@ -371,6 +383,86 @@ module Bot
             $stderr.puts "  Today: #{state_summary[:prs_today]}/#{Config::MAX_PRS_PER_DAY} PRs"
         end
     end
+end
+
+def format_time_pacific(iso_string)
+    return "-" unless iso_string
+    utc = Time.parse(iso_string).utc
+    # Determine if PDT or PST applies using US DST rules
+    # DST: second Sunday in March to first Sunday in November
+    year = utc.year
+    mar_second_sun = Time.utc(year, 3, 8) + ((7 - Time.utc(year, 3, 8).wday) % 7) * 86400
+    nov_first_sun = Time.utc(year, 11, 1) + ((7 - Time.utc(year, 11, 1).wday) % 7) * 86400
+    # DST transitions at 2:00 AM local = 10:00 AM UTC (PDT start) / 9:00 AM UTC (PST start)
+    pdt_start = mar_second_sun + 10 * 3600
+    pst_start = nov_first_sun + 9 * 3600
+    offset = (utc >= pdt_start && utc < pst_start) ? "-07:00" : "-08:00"
+    t = utc.getlocal(offset)
+    hour = t.hour % 12
+    hour = 12 if hour == 0
+    ampm = t.hour < 12 ? "a" : "p"
+    t.strftime("%b %-d ") + "#{hour}:#{"%02d" % t.min}#{ampm}"
+end
+
+STATUS_SORT_ORDER = { "blocked" => 0, "open" => 1, "closed" => 2, "merged" => 3 }.freeze
+
+def print_dashboard(state)
+    prs = state.all_tracked_prs
+
+    if prs.empty?
+        puts "No tracked PRs. Run --bootstrap to seed from GitHub."
+        return
+    end
+
+    # Sort by status priority (blocked, open, closed, merged),
+    # then by last_updated_at descending within each group
+    prs.sort! { |a, b|
+        sa = STATUS_SORT_ORDER.fetch(a[:pr]["status"] || "open", 99)
+        sb = STATUS_SORT_ORDER.fetch(b[:pr]["status"] || "open", 99)
+        if sa != sb
+            sa <=> sb
+        else
+            (b[:pr]["last_updated_at"] || "") <=> (a[:pr]["last_updated_at"] || "")
+        end
+    }
+
+    puts "Sentinel PR Tracker"
+    puts
+
+    # Column widths
+    repo_w = [prs.map { |e| e[:repo].length }.max, 4].max
+    pr_w = [prs.map { |e| "##{e[:pr]["number"]}".length }.max, 2].max
+    status_w = [prs.map { |e| (e[:pr]["status"] || "open").length }.max, 6].max
+    time_w = 16
+
+    header = "%-#{repo_w}s  %-#{pr_w}s  %-#{status_w}s  %-#{time_w}s  %-#{time_w}s  %s" %
+        ["REPO", "PR", "STATUS", "CREATED", "UPDATED", "NOTE"]
+    puts header
+    puts "─" * [header.length, 80].max
+
+    prs.each do |entry|
+        repo = entry[:repo]
+        pr = entry[:pr]
+        pr_num = "##{pr["number"]}"
+        status = pr["status"] || "open"
+        created = format_time_pacific(pr["created_at"])
+        updated = format_time_pacific(pr["last_updated_at"])
+        note = pr["note"] || ""
+
+        line = "%-#{repo_w}s  %-#{pr_w}s  %-#{status_w}s  %-#{time_w}s  %-#{time_w}s" %
+            [repo, pr_num, status, created, updated]
+        line += "  #{note}" unless note.empty?
+        puts line
+    end
+
+    # Summary counts
+    counts = Hash.new(0)
+    prs.each { |e| counts[e[:pr]["status"] || "open"] += 1 }
+    summary_parts = ["merged", "open", "blocked", "closed"]
+        .select { |s| counts[s] > 0 }
+        .map { |s| "#{counts[s]} #{s}" }
+    puts
+    puts "Summary: #{summary_parts.join(", ")}"
 end
 
 # CLI entry point
@@ -409,6 +501,18 @@ if __FILE__ == $0
 
         opts.on("--reason REASON", "Reason for rejection (use with --reject)") do |r|
             options[:reason] = r
+        end
+
+        opts.on("--dashboard", "Show PR lifecycle dashboard") do
+            options[:dashboard] = true
+        end
+
+        opts.on("--sync", "Sync PR statuses from GitHub") do
+            options[:sync] = true
+        end
+
+        opts.on("--bootstrap", "Discover and track existing Sentinel PRs from GitHub") do
+            options[:bootstrap] = true
         end
 
         opts.on("--limit N", Integer, "Max repos to scan (default: unlimited)") do |n|
@@ -476,7 +580,7 @@ if __FILE__ == $0
             puts "PR created: #{pr["html_url"]}"
             state = Bot::State.new
             item["findings"].each do |f|
-                state.record_pr(item["repo"], pr["html_url"], f["rule"])
+                state.record_pr(item["repo"], pr["html_url"], f["rule"], pr["number"])
             end
             state.save
         else
@@ -500,6 +604,35 @@ if __FILE__ == $0
         queue.save
         puts "Rejected: [#{match["id"][0, 8]}] #{item["repo"]} — #{item["title"]}"
         puts "  Reason: #{options[:reason]}" if options[:reason]
+        exit 0
+    end
+
+    if options[:dashboard]
+        state = Bot::State.new
+        print_dashboard(state)
+        exit 0
+    end
+
+    if options[:sync]
+        token = ENV["GITHUB_TOKEN"]
+        abort("GITHUB_TOKEN required for sync") unless token
+        state = Bot::State.new
+        sync = Bot::Sync.new(token: token, state: state)
+        result = sync.sync_all
+        state.save
+        print_dashboard(state)
+        exit 0
+    end
+
+    if options[:bootstrap]
+        require_relative "bootstrap"
+        token = ENV["GITHUB_TOKEN"]
+        abort("GITHUB_TOKEN required for bootstrap") unless token
+        state = Bot::State.new
+        bootstrap = Bot::Bootstrap.new(token: token, state: state)
+        bootstrap.run
+        state.save
+        print_dashboard(state)
         exit 0
     end
 

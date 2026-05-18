@@ -13,7 +13,7 @@
     <title>sentinel — Deterministic security scanner for GitHub Actions workflows</title>
     <meta
       name="description"
-      content="Deterministic pattern matching against 31 security dimensions. SHA pinning, shell injection, credential exposure, dangerous triggers — everything your workflows need auditing for."
+      content="Deterministic pattern matching against 32 security dimensions. SHA pinning, shell injection, credential exposure, dangerous triggers — everything your workflows need auditing for."
     />
 
     <!-- Open Graph / Social -->
@@ -22,7 +22,7 @@
     <meta property="og:title" content="sentinel — Deterministic security scanner for GitHub Actions workflows" />
     <meta
       property="og:description"
-      content="31 security rules. Deterministic scanning, AI-powered fixes. Find CI vulnerabilities before attackers do."
+      content="32 security rules. Deterministic scanning, AI-powered fixes. Find CI vulnerabilities before attackers do."
     />
     <meta property="og:image" content="https://sentinel.copilotkit.dev/og-image.svg" />
     <meta property="og:image:width" content="1200" />
@@ -31,7 +31,7 @@
     <meta name="twitter:title" content="sentinel — Find CI vulnerabilities before attackers do" />
     <meta
       name="twitter:description"
-      content="31 security rules with deterministic scanning and AI-powered remediation via Claude."
+      content="32 security rules with deterministic scanning and AI-powered remediation via Claude."
     />
     <meta name="twitter:image" content="https://sentinel.copilotkit.dev/og-image.svg" />
 
@@ -1023,7 +1023,7 @@
       <div class="container">
         <div class="hero-badge">
           <span class="dot"></span>
-          31 rules &middot; Auto-fix &middot; Pure Ruby
+          32 rules &middot; Auto-fix &middot; Pure Ruby
         </div>
 
         <h1>
@@ -1032,7 +1032,7 @@
         </h1>
 
         <p class="hero-sub">
-          Deterministic pattern matching against 31 security dimensions.
+          Deterministic pattern matching against 32 security dimensions.
           SHA pinning, shell injection, credential exposure, dangerous triggers &mdash;
           everything your workflows need auditing for. AI-powered fixes via Claude when you want them.
         </p>
@@ -1109,7 +1109,7 @@
         <div class="feature-grid">
           <div class="feature-card fade-in">
             <div class="feature-icon">&#128737;</div>
-            <h3>31 Security Rules</h3>
+            <h3>32 Security Rules</h3>
             <p>
               Critical to low, covering supply chain attacks, shell injection,
               credential exposure, permission scoping, and dangerous triggers.
@@ -1230,7 +1230,7 @@
     <!-- ─── Section 3: Rules Table ───────────────────────────────── -->
     <section class="section-rules" id="rules">
       <div class="container">
-        <h2 class="fade-in">31 security dimensions</h2>
+        <h2 class="fade-in">32 security dimensions</h2>
         <p class="rules-sub fade-in" style="transition-delay: 0.1s">
           Every rule maps to a documented exploit vector. No heuristics, no guessing &mdash;
           deterministic pattern matching against known-bad configurations.
@@ -1432,6 +1432,12 @@
                 <td>github-dependency-refs</td>
                 <td><span class="sev-medium">medium</span></td>
                 <td>Direct GitHub commit/branch ref in package install</td>
+              </tr>
+              <tr>
+                <td>32</td>
+                <td>jq-arg-escape-sequences</td>
+                <td><span class="sev-medium">medium</span></td>
+                <td>jq <code>--arg</code> value contains backslash escape sequences that won't be interpreted</td>
               </tr>
             </tbody>
           </table>
