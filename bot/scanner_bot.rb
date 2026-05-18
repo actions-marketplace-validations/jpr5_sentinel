@@ -73,6 +73,24 @@ module Bot
 
         private
 
+        def repo_requires_dco?(repo_name)
+            gh_client = GitHubClient.new(token: @token)
+
+            # Check for DCO GitHub App config
+            dco_config = gh_client.file_exists?(repo_name, ".github/dco.yml")
+            return true if dco_config
+
+            # Check CONTRIBUTING.md for DCO references
+            contributing = gh_client.fetch_file_content(repo_name, "CONTRIBUTING.md")
+            return true if contributing&.match?(/DCO|sign.off|Signed-off-by/i)
+
+            # Check CONTRIBUTING (no extension)
+            contributing = gh_client.fetch_file_content(repo_name, "CONTRIBUTING")
+            return true if contributing&.match?(/DCO|sign.off|Signed-off-by/i)
+
+            false
+        end
+
         def build_scanner
             formatter = Formatter::Json.new
             Scanner.new(client: GitHubClient.new(token: @token), formatter: formatter, min_severity: :critical)
@@ -146,6 +164,13 @@ module Bot
 
             # Collect all fixes into one PR
             sha_resolver = ShaResolver.new(token: @token)
+
+            signoff = if repo_requires_dco?(repo[:full_name])
+                Config::SIGNOFF_IDENTITY
+            else
+                nil
+            end
+
             fixed_files = {}
             fixed_findings = []    # findings that were auto-fixed
             advisory_findings = [] # findings that need manual review
@@ -205,7 +230,8 @@ module Bot
                 branch: branch,
                 title: title,
                 body: body,
-                files: fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files
+                files: fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files,
+                signoff: signoff
             )
 
             if pr

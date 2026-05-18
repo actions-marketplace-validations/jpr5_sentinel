@@ -11,7 +11,7 @@ module Bot
             @token = token
         end
 
-        def create_pr(repo:, branch:, title:, body:, files:)
+        def create_pr(repo:, branch:, title:, body:, files:, signoff: nil)
             owner, name = repo.split("/")
 
             # 1. Fork the repo
@@ -42,7 +42,8 @@ module Bot
                     branch: branch,
                     path: file_path,
                     content: content,
-                    message: "fix: #{title}"
+                    message: "fix: #{title}",
+                    signoff: signoff
                 )
                 return nil unless committed
             end
@@ -97,13 +98,15 @@ module Bot
             resp
         end
 
-        def commit_file(repo:, branch:, path:, content:, message:)
+        def commit_file(repo:, branch:, path:, content:, message:, signoff: nil)
+            full_message = signoff ? "#{message}\n\nSigned-off-by: #{signoff}" : message
+
             # Check if file already exists (to get its SHA for updates)
             existing = api_get("/repos/#{repo}/contents/#{path}?ref=#{branch}")
             file_sha = existing&.dig("sha")
 
             payload = {
-                message: message,
+                message: full_message,
                 content: Base64.strict_encode64(content),
                 branch: branch,
             }

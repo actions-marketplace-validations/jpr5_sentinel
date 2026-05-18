@@ -103,7 +103,7 @@ def apply_fixes(findings, workspace, ai_fix: false, ai_key: nil)
 end
 
 # Push fixes directly to the PR's source branch.
-def push_inline_fixes(workspace, branch, repo, token, fixed_files)
+def push_inline_fixes(workspace, branch, repo, token, fixed_files, signoff: nil)
     Dir.chdir(workspace) do
         system("git", "config", "user.name", "sentinel[bot]")
         system("git", "config", "user.email", "sentinel[bot]@users.noreply.github.com")
@@ -123,8 +123,10 @@ def push_inline_fixes(workspace, branch, repo, token, fixed_files)
         fixed_files.each { |path| system("git", "add", path) }
 
         unless system("git", "diff", "--cached", "--quiet")
-            system("git", "commit", "-m",
-                "fix: auto-fix workflow security findings\n\nApplied by Sentinel (https://github.com/jpr5/sentinel)")
+            commit_msg = "fix: auto-fix workflow security findings\n\nApplied by Sentinel (https://github.com/jpr5/sentinel)"
+            commit_msg += "\n\nSigned-off-by: #{signoff}" if signoff
+
+            system("git", "commit", "-m", commit_msg)
 
             if system("git", "push", "origin", branch,
                       [:err] => File::NULL)
@@ -137,7 +139,7 @@ def push_inline_fixes(workspace, branch, repo, token, fixed_files)
 end
 
 # Create a new PR with the fixes applied to a fresh branch.
-def create_fix_pr(workspace, repo, token, fixed_files)
+def create_fix_pr(workspace, repo, token, fixed_files, signoff: nil)
     Dir.chdir(workspace) do
         branch = "sentinel/fix-#{Time.now.strftime('%Y%m%d-%H%M%S')}"
 
@@ -156,8 +158,10 @@ def create_fix_pr(workspace, repo, token, fixed_files)
         fixed_files.each { |path| system("git", "add", path) }
 
         unless system("git", "diff", "--cached", "--quiet")
-            system("git", "commit", "-m",
-                "fix: auto-fix workflow security findings\n\nApplied by Sentinel (https://github.com/jpr5/sentinel)")
+            commit_msg = "fix: auto-fix workflow security findings\n\nApplied by Sentinel (https://github.com/jpr5/sentinel)"
+            commit_msg += "\n\nSigned-off-by: #{signoff}" if signoff
+
+            system("git", "commit", "-m", commit_msg)
 
             if system("git", "push", "origin", branch,
                       [:err] => File::NULL)
@@ -382,10 +386,32 @@ if ENV["INPUT_FIX"] == "true"
     fixes_applied = fixed_files.length
 
     if fixed_files.any?
-        if event_name == "pull_request" && head_ref && !head_ref.empty?
-            push_inline_fixes(workspace, head_ref, repo, token, fixed_files)
+        # Detect if repo requires DCO sign-off
+        dco_required = File.exist?(File.join(workspace, ".github", "dco.yml"))
+        unless dco_required
+            %w[CONTRIBUTING.md CONTRIBUTING].each do |contrib_file|
+                contrib_path = File.join(workspace, contrib_file)
+                if File.exist?(contrib_path)
+                    contrib_content = File.read(contrib_path)
+                    if contrib_content.match?(/DCO|sign.off|Signed-off-by/i)
+                        dco_required = true
+                        break
+                    end
+                end
+            end
+        end
+
+        signoff = if dco_required
+            actor = ENV["GITHUB_ACTOR"] || "sentinel[bot]"
+            "#{actor} <#{actor}@users.noreply.github.com>"
         else
-            create_fix_pr(workspace, repo, token, fixed_files)
+            nil
+        end
+
+        if event_name == "pull_request" && head_ref && !head_ref.empty?
+            push_inline_fixes(workspace, head_ref, repo, token, fixed_files, signoff: signoff)
+        else
+            create_fix_pr(workspace, repo, token, fixed_files, signoff: signoff)
         end
     else
         puts "No fixable findings detected."
