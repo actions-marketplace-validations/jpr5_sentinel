@@ -66,10 +66,10 @@ class CloneClient
         # 2. SSH — works if SSH key is configured
         return true if try_url("git@github.com:#{repo}.git")
 
-        # 3. HTTPS with gh auth token — works if gh CLI is authenticated
+        # 3. HTTPS with gh auth token via credential helper (token never in URL or argv)
         token = detect_gh_token
         if token
-            return true if try_url("https://x-access-token:#{token}@github.com/#{repo}.git")
+            return true if try_url_with_token(repo, token)
         end
 
         false
@@ -78,6 +78,31 @@ class CloneClient
     def try_url(url)
         FileUtils.rm_rf(Dir.children(@tmpdir)) if @tmpdir && File.directory?(@tmpdir)
         system("git", "clone", *CLONE_ARGS, url, @tmpdir, [:out, :err] => File::NULL)
+    end
+
+    def try_url_with_token(repo, token)
+        require "tempfile"
+        FileUtils.rm_rf(Dir.children(@tmpdir)) if @tmpdir && File.directory?(@tmpdir)
+
+        # Write a temporary credential file so the token never appears in argv or /proc
+        cred_file = Tempfile.new("git-cred-", @tmpdir)
+        begin
+            cred_file.write("https://x-access-token:#{token}@github.com\n")
+            cred_file.flush
+            cred_file.close
+
+            env = { "GIT_TERMINAL_PROMPT" => "0" }
+            system(
+                env,
+                "git",
+                "-c", "credential.helper=store --file=#{cred_file.path}",
+                "clone", *CLONE_ARGS,
+                "https://github.com/#{repo}.git", @tmpdir,
+                [:out, :err] => File::NULL
+            )
+        ensure
+            cred_file.close! rescue nil
+        end
     end
 
     def detect_gh_token

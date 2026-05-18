@@ -285,6 +285,7 @@ end
 # -----------------------------------------------------------------------
 def show_diffs(result, workflows_dir)
     require "tempfile"
+    require "open3"
 
     all_changed_files = (result[:mechanical_details].keys + result[:ai_details].keys).uniq
 
@@ -302,7 +303,7 @@ def show_diffs(result, workflows_dir)
             fixed_file.write(content)
             fixed_file.flush
 
-            diff_output = `diff -u #{orig_file.path} #{fixed_file.path} 2>&1`
+            diff_output, _ = Open3.capture2("diff", "-u", orig_file.path, fixed_file.path)
             diff_output.sub!(/^--- .*$/, "--- .github/workflows/#{filename}")
             diff_output.sub!(/^\+\+\+ .*$/, "+++ .github/workflows/#{filename} (fixed)")
             puts diff_output

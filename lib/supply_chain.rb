@@ -96,7 +96,8 @@ class SupplyChain
 
     def fetch_repo(repo)
         @cache[repo] ||= begin
-            uri = URI("https://api.github.com/repos/#{repo}")
+            encoded = repo.split("/").map { |p| URI.encode_www_form_component(p) }.join("/")
+            uri = URI("https://api.github.com/repos/#{encoded}")
             req = Net::HTTP::Get.new(uri)
             req["Authorization"] = "Bearer #{@token}" if @token
             req["Accept"] = "application/vnd.github+json"

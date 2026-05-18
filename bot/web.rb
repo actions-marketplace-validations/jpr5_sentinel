@@ -29,8 +29,34 @@ get "/" do
     HTML
 end
 
-# Opt out -- one click, done
+# Opt out -- confirmation page (GET) + action (POST)
 get "/opt-out" do
+    repo = params["repo"]
+    token = params["token"]
+
+    halt 400, "Missing repo parameter" unless repo
+    halt 400, "Missing token parameter" unless token
+    halt 403, "Invalid or expired token" unless valid_token?(token, repo, "opt-out")
+
+    content_type :html
+    <<~HTML
+    <!DOCTYPE html>
+    <html>
+    <head><title>Opt Out &mdash; Sentinel</title></head>
+    <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 0 20px;">
+      <h1>&#x1f6e1;&#xfe0f; Opt out of Sentinel</h1>
+      <p>This will prevent Sentinel from opening future PRs on <strong>#{escape_html(repo)}</strong>.</p>
+      <form method="POST" action="/opt-out">
+        <input type="hidden" name="repo" value="#{escape_html(repo)}">
+        <input type="hidden" name="token" value="#{escape_html(token)}">
+        <button type="submit" style="padding: 10px 20px; font-size: 1rem; cursor: pointer;">Confirm opt-out</button>
+      </form>
+    </body>
+    </html>
+    HTML
+end
+
+post "/opt-out" do
     repo = params["repo"]
     token = params["token"]
 
@@ -58,8 +84,34 @@ get "/opt-out" do
     HTML
 end
 
-# Adopt -- creates a PR adding the Sentinel GitHub Action to the repo
+# Adopt -- confirmation page (GET) + action (POST)
 get "/adopt" do
+    repo = params["repo"]
+    token_param = params["token"]
+
+    halt 400, "Missing repo parameter" unless repo
+    halt 400, "Missing token parameter" unless token_param
+    halt 403, "Invalid or expired token" unless valid_token?(token_param, repo, "adopt")
+
+    content_type :html
+    <<~HTML
+    <!DOCTYPE html>
+    <html>
+    <head><title>Adopt Sentinel &mdash; Sentinel</title></head>
+    <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 0 20px;">
+      <h1>&#x1f6e1;&#xfe0f; Adopt Sentinel</h1>
+      <p>This will open a PR adding the Sentinel security scanner to <strong>#{escape_html(repo)}</strong>.</p>
+      <form method="POST" action="/adopt">
+        <input type="hidden" name="repo" value="#{escape_html(repo)}">
+        <input type="hidden" name="token" value="#{escape_html(token_param)}">
+        <button type="submit" style="padding: 10px 20px; font-size: 1rem; cursor: pointer;">Confirm adopt</button>
+      </form>
+    </body>
+    </html>
+    HTML
+end
+
+post "/adopt" do
     repo = params["repo"]
     token_param = params["token"]
 

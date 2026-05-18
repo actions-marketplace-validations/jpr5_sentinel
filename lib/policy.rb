@@ -54,7 +54,7 @@ class Policy
     private
 
     def load_config
-        raw = YAML.safe_load(File.read(@path), permitted_classes: [Symbol])
+        raw = YAML.safe_load(File.read(@path))
         unless raw.is_a?(Hash)
             @errors << "#{@path}: expected a YAML mapping, got #{raw.class}"
             return

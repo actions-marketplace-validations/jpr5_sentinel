@@ -15,8 +15,11 @@ module Bot
         def save
             prune
             tmp = "#{@path}.tmp"
-            File.write(tmp, JSON.pretty_generate(@data))
-            File.rename(tmp, @path)
+            File.open(@path, File::CREAT | File::RDWR) do |lock|
+                lock.flock(File::LOCK_EX)
+                File.write(tmp, JSON.pretty_generate(@data))
+                File.rename(tmp, @path)
+            end
         end
 
         def already_processed?(repo_name, rule)
@@ -75,7 +78,11 @@ module Bot
         def valid_token?(token, repo, action)
             entry = @data.dig("tokens", token)
             return false unless entry
-            entry["repo"] == repo && entry["action"] == action
+            return false unless entry["repo"] == repo && entry["action"] == action
+            # 7-day expiry
+            created = Time.parse(entry["created_at"]) rescue nil
+            return false if created && (Time.now.utc - created) > 7 * 86400
+            true
         end
 
         def consume_token(token)
