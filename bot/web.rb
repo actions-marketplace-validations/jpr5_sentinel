@@ -2,10 +2,13 @@
 
 require "sinatra"
 require "json"
+require_relative "audit"
 require_relative "config"
 require_relative "github_app_auth"
 require_relative "state"
 require_relative "pr_writer"
+
+AUDIT = Bot::Audit.new
 
 set :port, ENV["PORT"] || 3000
 set :bind, "0.0.0.0"
@@ -68,6 +71,7 @@ post "/opt-out" do
     state.record_opt_out(repo)
     state.save
 
+    AUDIT.opt_out(repo)
     consume_token(token)
 
     content_type :html
@@ -174,6 +178,8 @@ post "/adopt" do
     consume_token(token_param)
 
     if pr
+        AUDIT.adopt(repo)
+        AUDIT.pr_created(repo, pr["html_url"])
         content_type :html
         <<~HTML
         <!DOCTYPE html>
@@ -187,6 +193,8 @@ post "/adopt" do
         </html>
         HTML
     else
+        AUDIT.adopt(repo)
+        AUDIT.pr_failed(repo, "create_pr_returned_nil")
         halt 500, "Failed to create PR. The repo may not allow forks, or the bot lacks permissions."
     end
 end

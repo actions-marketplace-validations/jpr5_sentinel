@@ -8,6 +8,7 @@ require "uri"
 require_relative "../lib/scanner"
 require_relative "../lib/auto_fix"
 require_relative "../lib/sha_resolver"
+require_relative "audit"
 require_relative "config"
 require_relative "github_app_auth"
 require_relative "search"
@@ -33,6 +34,7 @@ module Bot
             @state = State.new
             @pr_writer = PrWriter.new(token: @token)
             @scanner = build_scanner
+            @audit = Audit.new
             @pattern = pattern
             @dry_run = dry_run
             @limit = limit
@@ -41,6 +43,7 @@ module Bot
 
         def run
             query = select_query
+            @audit.run_start(query[:pattern], @dry_run, @limit)
             $stderr.puts "Bot run: pattern=#{query[:pattern]} dry_run=#{@dry_run}"
             $stderr.puts "Query: #{query[:query]}"
 
@@ -56,11 +59,13 @@ module Bot
                 end
 
                 if @state.already_processed?(repo[:full_name], query[:pattern])
+                    @audit.skip(repo[:full_name], "already_processed")
                     @summary[:skipped] += 1
                     next
                 end
 
                 if @state.opted_out?(repo[:full_name])
+                    @audit.skip(repo[:full_name], "opted_out")
                     @summary[:skipped] += 1
                     next
                 end
@@ -69,6 +74,7 @@ module Bot
             end
 
             @state.save
+            @audit.run_end(@summary)
             print_summary
         end
 
@@ -158,6 +164,7 @@ module Bot
                 findings = result[:findings]
             rescue => e
                 $stderr.puts "  Error scanning: #{e.message}"
+                @audit.error(repo[:full_name], e.message)
                 @summary[:errors] += 1
                 return
             end
@@ -169,6 +176,7 @@ module Bot
             sentinel_workflow = workflows.any? { |w| w[:content]&.match?(/uses:\s*jpr5\/sentinel/) }
             if sentinel_config || sentinel_workflow
                 $stderr.puts "  Already uses Sentinel, skipping"
+                @audit.skip(repo[:full_name], "already_uses_sentinel")
                 @summary[:skipped] += 1
                 return
             end
@@ -179,6 +187,7 @@ module Bot
             }
 
             @state.record_scan(repo[:full_name], critical_findings)
+            @audit.scan(repo[:full_name], critical_findings.length)
 
             if critical_findings.empty?
                 $stderr.puts "  No critical findings"
@@ -196,6 +205,7 @@ module Bot
                         opt_out_config = YAML.safe_load(opt_out_content)
                         if opt_out_config.is_a?(Hash) && opt_out_config["enabled"] == false
                             $stderr.puts "  Repo has opted out"
+                            @audit.opt_out(repo[:full_name])
                             @state.record_opt_out(repo[:full_name])
                             @summary[:skipped] += 1
                             return
@@ -236,6 +246,7 @@ module Bot
                         if result && result != patched
                             patched = result
                             fixed_findings << finding
+                            @audit.fix(repo[:full_name], finding.rule, file)
                         else
                             advisory_findings << finding
                         end
@@ -303,6 +314,7 @@ module Bot
 
             if pr
                 $stderr.puts "  Opened PR: #{pr["html_url"]}"
+                @audit.pr_created(repo[:full_name], pr["html_url"])
                 # Record one PR per rule for state tracking
                 (fixed_findings + advisory_findings).map(&:rule).uniq.each do |rule|
                     @state.record_pr(repo[:full_name], pr["html_url"], rule)
@@ -310,6 +322,7 @@ module Bot
                 @summary[:prs_opened] += 1
             else
                 $stderr.puts "  Failed to create PR"
+                @audit.pr_failed(repo[:full_name], "create_pr_returned_nil")
                 @summary[:errors] += 1
             end
         end
