@@ -4,4 +4,5 @@ pkg/
 tmp/
 coverage/
 bot/state.json
+bot/audit.log
 Gemfile.lock
