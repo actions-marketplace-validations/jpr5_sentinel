@@ -1,10 +1,9 @@
 module Rules
     class DangerousLifecycleScripts < Base
         def name = "dangerous-lifecycle-scripts"
-        def description = "Package install without --ignore-scripts in CI"
-        def severity = :high
+        def description = "Package install without --ignore-scripts in workflow with secrets"
+        def severity = :medium
 
-        # Match install commands WITHOUT --ignore-scripts
         INSTALL_CMDS = [
             { match: /\bnpm\s+(install|ci)\b/, safe: /--ignore-scripts/, name: "npm" },
             { match: /\bpnpm\s+install\b/, safe: /--ignore-scripts/, name: "pnpm" },
@@ -14,6 +13,8 @@ module Rules
         ]
 
         def check(workflow)
+            return [] unless workflow_has_secrets?(workflow)
+
             findings = []
 
             workflow.raw_lines.each_with_index do |line, i|
@@ -26,13 +27,19 @@ module Rules
                     findings << finding(workflow,
                         line: i + 1,
                         code: line.strip,
-                        message: "#{cmd[:name]} install runs lifecycle scripts (preinstall/postinstall) — a compromised dependency executes arbitrary code",
+                        message: "#{cmd[:name]} install runs lifecycle scripts in a workflow with secrets — a compromised dependency can exfiltrate credentials",
                         fix: "Add --ignore-scripts, then explicitly rebuild trusted native deps: #{cmd[:name]} rebuild sharp esbuild"
                     )
                 end
             end
 
             findings
+        end
+
+        private
+
+        def workflow_has_secrets?(workflow)
+            workflow.raw.match?(/\$\{\{\s*secrets\./)
         end
     end
 end
