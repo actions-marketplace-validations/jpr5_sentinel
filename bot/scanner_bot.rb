@@ -15,6 +15,7 @@ require_relative "search"
 require_relative "state"
 require_relative "pr_writer"
 require_relative "queue"
+require_relative "audit"
 require_relative "sync"
 
 module Bot
@@ -40,6 +41,7 @@ module Bot
             @dry_run = dry_run
             @queue_mode = queue_mode
             @limit = limit
+            @audit = Audit.new
             @summary = { scanned: 0, findings: 0, prs_opened: 0, queued: 0, skipped: 0, errors: 0 }
         end
 
@@ -47,6 +49,7 @@ module Bot
             sync_pr_statuses
 
             query = select_query
+            @audit.run_start(query[:pattern], @dry_run, @limit)
             $stderr.puts "Bot run: pattern=#{query[:pattern]} dry_run=#{@dry_run}"
             $stderr.puts "Query: #{query[:query]}"
 
@@ -57,16 +60,19 @@ module Bot
                 break if @limit && @summary[:scanned] >= @limit
 
                 if @state.rate_limit_reached?
+                    @audit.skip(repo[:full_name], "rate_limit_reached")
                     $stderr.puts "Daily PR limit reached (#{Config::MAX_PRS_PER_DAY}), stopping"
                     break
                 end
 
                 if @state.already_processed?(repo[:full_name], query[:pattern])
+                    @audit.skip(repo[:full_name], "already_processed")
                     @summary[:skipped] += 1
                     next
                 end
 
                 if @state.opted_out?(repo[:full_name])
+                    @audit.skip(repo[:full_name], "opted_out")
                     @summary[:skipped] += 1
                     next
                 end
@@ -75,6 +81,7 @@ module Bot
             end
 
             @state.save
+            @audit.run_end(@summary)
             print_summary
         end
 
@@ -114,12 +121,14 @@ module Bot
 
         def scan_and_fix(repo, pattern)
             $stderr.puts "Scanning #{repo[:full_name]} (#{repo[:stars]} stars)..."
+            @audit.scan(repo[:full_name], 0) # initial scan entry; updated below with findings count
             @summary[:scanned] += 1
 
             begin
                 result = @scanner.scan(repo[:full_name])
                 findings = result[:findings]
             rescue => e
+                @audit.error(repo[:full_name], e.message)
                 $stderr.puts "  Error scanning: #{e.message}"
                 @summary[:errors] += 1
                 return
@@ -131,6 +140,7 @@ module Bot
             workflows = gh_client.fetch_workflows(repo[:full_name])
             sentinel_workflow = workflows.any? { |w| w[:content]&.match?(/uses:\s*jpr5\/sentinel/) }
             if sentinel_config || sentinel_workflow
+                @audit.skip(repo[:full_name], "already_uses_sentinel")
                 $stderr.puts "  Already uses Sentinel, skipping"
                 @summary[:skipped] += 1
                 return
@@ -158,6 +168,7 @@ module Bot
                     begin
                         opt_out_config = YAML.safe_load(opt_out_content)
                         if opt_out_config.is_a?(Hash) && opt_out_config["enabled"] == false
+                            @audit.skip(repo[:full_name], "opt_out_file")
                             $stderr.puts "  Repo has opted out"
                             @state.record_opt_out(repo[:full_name])
                             @summary[:skipped] += 1
@@ -241,6 +252,7 @@ module Bot
                     signoff: signoff
                 )
                 @queue.save
+                @audit.log("QUEUED", repo: repo[:full_name], details: "title=#{title}")
                 $stderr.puts "  Queued for review: #{title}"
                 @summary[:queued] += 1
                 return
@@ -258,6 +270,7 @@ module Bot
             )
 
             if pr
+                @audit.pr_created(repo[:full_name], pr["html_url"])
                 $stderr.puts "  Opened PR: #{pr["html_url"]}"
                 # Record one PR per rule for state tracking
                 (fixed_findings + advisory_findings).map(&:rule).uniq.each do |rule|
@@ -265,6 +278,7 @@ module Bot
                 end
                 @summary[:prs_opened] += 1
             else
+                @audit.pr_failed(repo[:full_name], "create_pr_returned_nil")
                 $stderr.puts "  Failed to create PR"
                 @summary[:errors] += 1
             end
@@ -566,6 +580,9 @@ if __FILE__ == $0
         item = queue.approve(match["id"])
         queue.save
 
+        audit = Bot::Audit.new
+        audit.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]}")
+
         writer = Bot::PrWriter.new(token: token)
         pr = writer.create_pr(
             repo: item["repo"],
@@ -577,6 +594,7 @@ if __FILE__ == $0
         )
 
         if pr
+            audit.pr_created(item["repo"], pr["html_url"])
             puts "PR created: #{pr["html_url"]}"
             state = Bot::State.new
             item["findings"].each do |f|
@@ -584,6 +602,7 @@ if __FILE__ == $0
             end
             state.save
         else
+            audit.pr_failed(item["repo"], "create_pr_returned_nil")
             $stderr.puts "Failed to create PR for #{item["repo"]}"
             exit 1
         end
@@ -602,6 +621,8 @@ if __FILE__ == $0
 
         item = queue.reject(match["id"], reason: options[:reason])
         queue.save
+        audit = Bot::Audit.new
+        audit.log("QUEUE_REJECT", repo: item["repo"], details: "id=#{match["id"][0, 8]} reason=#{options[:reason] || 'none'}")
         puts "Rejected: [#{match["id"][0, 8]}] #{item["repo"]} — #{item["title"]}"
         puts "  Reason: #{options[:reason]}" if options[:reason]
         exit 0
