@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
 
       - name: Install zizmor
-        run: pipx install zizmor
+        run: pipx install zizmor==1.5.0
 
       - name: Run zizmor
         run: zizmor --format sarif . > results.sarif 2>/dev/null || true

@@ -293,6 +293,11 @@ sentinel deps --org my-org --format json
 --local PATH       scan local directory
 --org ORG          scan all repos in a GitHub org (requires GITHUB_TOKEN)
 --token TOKEN      GitHub API token — only needed for private repos and --org scanning
+--platform PLAT    github (default), gitlab, bitbucket, or auto
+--dry-run          preview changes without writing files (fix mode)
+--ai               enable AI-powered fixes via Claude
+--model MODEL      AI model to use (default: claude-opus-4-20250514)
+--ai-key KEY       Anthropic API key for AI fixes
 ```
 
 ## Exit Codes
@@ -349,6 +354,7 @@ bot/
   state.json                    # persisted bot state
   pr_writer.rb                  # cross-fork PR creation
   config.rb                     # bot configuration
+  github_app_auth.rb            # GitHub App JWT + installation token auth
   web.rb                        # bot web dashboard
 ```
 
