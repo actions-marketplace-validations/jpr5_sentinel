@@ -4,8 +4,7 @@ module Rules
         def description = "Workflow writes to IDE/AI agent config files that auto-execute code"
         def severity = :critical
 
-        IDE_PATHS = /\.(claude|vscode|cursor)\//
-        WRITE_PATTERN = /(echo|cat|tee|printf|>|>>).*\.(claude|vscode|cursor)\//
+        WRITE_PATTERN = /(echo|cat|tee|printf|cp|mv|install|sed|>|>>).*\.(claude|vscode|cursor)\//
 
         def check(workflow)
             findings = []

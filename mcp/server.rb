@@ -200,6 +200,10 @@ class McpServer
             content = File.read(path)
             original = content.dup
 
+            # Sort descending by line so later-line fixes are applied first.
+            # This is safe because AutoFix.apply re-parses the full content
+            # into lines on each call, and edits to later lines don't shift
+            # the line numbers of earlier lines.
             file_findings.sort_by { |f| -(f["line"] || 0) }.each do |raw|
                 finding = Finding.new(
                     rule: raw["rule"], severity: raw["severity"].to_sym,
