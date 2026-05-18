@@ -58,17 +58,21 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SERVICE_ID: ${{ matrix.service.railway_id }}
           ENV_ID: ${{ env.RAILWAY_ENV_ID }}
+          PROJECT_ID: "60cc49ff-cdbb-4c5b-9c55-6b3d2391f93d"
         run: |
+          # Env var change triggers a fresh deploy that re-pulls the image.
+          # serviceInstanceRedeploy does NOT re-pull — it reuses cached image.
+          DEPLOY_SHA="${{ github.sha }}"
           RESULT=$(curl -s -X POST "https://backboard.railway.com/graphql/v2" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation { serviceInstanceRedeploy(serviceId: \\\"$SERVICE_ID\\\", environmentId: \\\"$ENV_ID\\\") }\"}")
+            -d "{\"query\":\"mutation { variableCollectionUpsert(input: { projectId: \\\"$PROJECT_ID\\\", environmentId: \\\"$ENV_ID\\\", serviceId: \\\"$SERVICE_ID\\\", variables: { DEPLOY_SHA: \\\"$DEPLOY_SHA\\\" } }) }\"}")
           ERRORS=$(echo "$RESULT" | jq -r '.errors[]?.message // empty')
           if [ -n "$ERRORS" ]; then
-            echo "::error::Railway redeploy failed: $ERRORS"
+            echo "::error::Railway deploy trigger failed: $ERRORS"
             exit 1
           fi
-          echo "Deploy triggered for ${{ matrix.service.name }}"
+          echo "Deploy triggered for ${{ matrix.service.name }} (sha: $DEPLOY_SHA)"
 
       - name: Verify deploy
         env:
