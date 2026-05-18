@@ -8,6 +8,8 @@ RUN apk add --no-cache git && \
 COPY lib/ /sentinel/lib/
 COPY bot/ /sentinel/bot/
 
+RUN mkdir -p /sentinel/data
+
 WORKDIR /sentinel
 
 EXPOSE 3000
