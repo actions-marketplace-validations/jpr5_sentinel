@@ -103,7 +103,7 @@ def apply_fixes(findings, workspace, ai_fix: false, ai_key: nil)
 end
 
 # Push fixes directly to the PR's source branch.
-def push_inline_fixes(workspace, branch, repo, token)
+def push_inline_fixes(workspace, branch, repo, token, fixed_files)
     Dir.chdir(workspace) do
         system("git", "config", "user.name", "sentinel[bot]")
         system("git", "config", "user.email", "sentinel[bot]@users.noreply.github.com")
@@ -120,7 +120,7 @@ def push_inline_fixes(workspace, branch, repo, token)
         system("git", "fetch", "origin", branch)
         system("git", "checkout", branch)
 
-        system("git", "add", ".github/")
+        fixed_files.each { |path| system("git", "add", path) }
 
         unless system("git", "diff", "--cached", "--quiet")
             system("git", "commit", "-m",
@@ -137,7 +137,7 @@ def push_inline_fixes(workspace, branch, repo, token)
 end
 
 # Create a new PR with the fixes applied to a fresh branch.
-def create_fix_pr(workspace, repo, token)
+def create_fix_pr(workspace, repo, token, fixed_files)
     Dir.chdir(workspace) do
         branch = "sentinel/fix-#{Time.now.strftime('%Y%m%d-%H%M%S')}"
 
@@ -153,7 +153,7 @@ def create_fix_pr(workspace, repo, token)
                [:out, :err] => File::NULL)
 
         system("git", "checkout", "-b", branch)
-        system("git", "add", ".github/")
+        fixed_files.each { |path| system("git", "add", path) }
 
         unless system("git", "diff", "--cached", "--quiet")
             system("git", "commit", "-m",
@@ -383,9 +383,9 @@ if ENV["INPUT_FIX"] == "true"
 
     if fixed_files.any?
         if event_name == "pull_request" && head_ref && !head_ref.empty?
-            push_inline_fixes(workspace, head_ref, repo, token)
+            push_inline_fixes(workspace, head_ref, repo, token, fixed_files)
         else
-            create_fix_pr(workspace, repo, token)
+            create_fix_pr(workspace, repo, token, fixed_files)
         end
     else
         puts "No fixable findings detected."

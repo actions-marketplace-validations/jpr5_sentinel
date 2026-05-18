@@ -8,7 +8,6 @@ module Rules
             { match: /\bnpm\s+(install|ci)\b/, safe: /--ignore-scripts/, name: "npm" },
             { match: /\bpnpm\s+install\b/, safe: /--ignore-scripts/, name: "pnpm" },
             { match: /\byarn\s+install\b/, safe: /--ignore-scripts/, name: "yarn" },
-            { match: /\byarn\b(?!\s+(exec|run|add|remove|why|info|install))/, safe: /--ignore-scripts/, name: "yarn" },
             { match: /\bbun\s+install\b/, safe: /--ignore-scripts|--no-scripts/, name: "bun" },
         ]
 
