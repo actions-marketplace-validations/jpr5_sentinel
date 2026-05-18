@@ -52,10 +52,14 @@ class TestCliFix < Minitest::Test
 
         out, err, status = run_fix("--local", @tmpdir)
 
-        # The file should have been modified (SHA pinned)
+        # The file should have been modified by at least one auto-fix
+        # (persist-credentials and timeout-minutes don't require network).
+        # SHA pinning requires GitHub API access so we don't assert it here.
         content = File.read(File.join(@workflows_dir, "ci.yml"))
-        # Should contain a SHA (40 hex chars) instead of @v4
-        assert_match(/actions\/checkout@[a-f0-9]{40}/, content)
+        assert_match(/persist-credentials:\s*false/, content,
+                     "Expected persist-credentials: false to be added")
+        assert_match(/timeout-minutes:/, content,
+                     "Expected timeout-minutes to be added")
     end
 
     def test_fix_no_args_shows_error

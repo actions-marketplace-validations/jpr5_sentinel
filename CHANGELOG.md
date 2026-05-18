@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.2.0 (2026-05-18)
+
+### Bot Hardening
+- Safety gates for all bot operations
+- `--live` flag required for production bot runs (dry-run by default)
+- Duplicate PR detection to avoid spamming repos
+- Pre-flight validation before creating PRs
+
+### Auto-Fix Bug Fixes
+- Fix indentation corruption when inserting env blocks
+- Fix duplicate env entries when multiple expressions on same line
+- Fix incomplete replacement leaving partial expressions in run blocks
+- Fix phantom targeting where fixes applied to wrong step
+- Fix quote context handling for single-quoted expressions
+
+### New Features
+- YAML validation gate: reject fixes that produce invalid YAML
+- Repo convention detection (CLA requirements, conventional commits, PR templates)
+- Audit log for all bot actions (who, when, what, which repo)
+- Human-in-the-loop approval queue for bot PRs
+- DCO signing support for repos that require it
+
+### Production Bug Fixes
+- 6 broken production PRs fixed in-place
+
+### New Supply Chain Rules
+- ide-config-injection: detect committed IDE configs with malicious extensions
+- dangerous-lifecycle-scripts: flag npm/pip lifecycle hooks that run arbitrary code
+- github-dependency-refs: detect dependencies loaded from GitHub refs instead of registries
+
 ## 1.1.0 (2026-05-18)
 
 ### Severity Re-ranking
