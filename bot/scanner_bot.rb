@@ -13,10 +13,11 @@ require_relative "github_app_auth"
 require_relative "search"
 require_relative "state"
 require_relative "pr_writer"
+require_relative "queue"
 
 module Bot
     class ScannerBot
-        def initialize(token: nil, pattern: "rotate", dry_run: false, limit: nil)
+        def initialize(token: nil, pattern: "rotate", dry_run: false, limit: nil, queue_mode: false)
             if ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"]
                 @auth = GitHubAppAuth.new
                 @token = token || ENV["GITHUB_TOKEN"]
@@ -31,11 +32,13 @@ module Bot
             @search = Search.new(token: @token)
             @state = State.new
             @pr_writer = PrWriter.new(token: @token)
+            @queue = Queue.new
             @scanner = build_scanner
             @pattern = pattern
             @dry_run = dry_run
+            @queue_mode = queue_mode
             @limit = limit
-            @summary = { scanned: 0, findings: 0, prs_opened: 0, skipped: 0, errors: 0 }
+            @summary = { scanned: 0, findings: 0, prs_opened: 0, queued: 0, skipped: 0, errors: 0 }
         end
 
         def run
@@ -223,6 +226,22 @@ module Bot
                 return
             end
 
+            if @queue_mode
+                all_findings = fixed_findings + advisory_findings
+                @queue.add(
+                    repo: repo[:full_name],
+                    title: title,
+                    body: body,
+                    files: fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files,
+                    findings: all_findings,
+                    signoff: signoff
+                )
+                @queue.save
+                $stderr.puts "  Queued for review: #{title}"
+                @summary[:queued] += 1
+                return
+            end
+
             repo_token = pr_token_for(repo[:full_name])
             writer = PrWriter.new(token: repo_token)
             pr = writer.create_pr(
@@ -341,6 +360,7 @@ module Bot
             $stderr.puts "  Repos scanned: #{s[:scanned]}"
             $stderr.puts "  Critical findings: #{s[:findings]}"
             $stderr.puts "  PRs opened: #{s[:prs_opened]}"
+            $stderr.puts "  Queued for review: #{s[:queued]}" if s[:queued] > 0
             $stderr.puts "  Skipped (processed/opted-out): #{s[:skipped]}"
             $stderr.puts "  Errors: #{s[:errors]}"
 
@@ -371,6 +391,26 @@ if __FILE__ == $0
             options[:dry_run] = true
         end
 
+        opts.on("--queue", "Generate fixes and queue for review (don't submit PRs)") do
+            options[:queue] = true
+        end
+
+        opts.on("--review", "Review pending approval queue") do
+            options[:review] = true
+        end
+
+        opts.on("--approve ID", "Approve and submit a queued PR") do |id|
+            options[:approve] = id
+        end
+
+        opts.on("--reject ID", "Reject a queued PR") do |id|
+            options[:reject] = id
+        end
+
+        opts.on("--reason REASON", "Reason for rejection (use with --reject)") do |r|
+            options[:reason] = r
+        end
+
         opts.on("--limit N", Integer, "Max repos to scan (default: unlimited)") do |n|
             options[:limit] = n
         end
@@ -381,11 +421,93 @@ if __FILE__ == $0
         end
     end.parse!
 
+    # Queue management commands don't need a GitHub token
+    if options[:review]
+        queue = Bot::Queue.new
+        pending = queue.pending
+        if pending.empty?
+            puts "No pending PRs in the queue."
+        else
+            puts "Pending PRs (#{pending.length}):"
+            puts
+            pending.each do |item|
+                id_short = item["id"][0, 8]
+                findings_summary = item["findings"].map { |f| "  #{f["rule"]}: #{f["file"]}:#{f["line"]}" }
+                puts "[#{id_short}] #{item["repo"]} — #{item["title"]}"
+                findings_summary.each { |line| puts line }
+                puts "  Queued: #{item["queued_at"]}"
+                puts
+            end
+            puts "sentinel bot --approve <id>"
+            puts "sentinel bot --reject <id> --reason \"reason\""
+        end
+        exit 0
+    end
+
+    if options[:approve]
+        id = options[:approve]
+        queue = Bot::Queue.new
+
+        # Support short IDs (prefix match)
+        match = queue.pending.find { |i| i["id"].start_with?(id) }
+        unless match
+            abort("No pending item found matching '#{id}'")
+        end
+
+        token = ENV["GITHUB_TOKEN"]
+        unless token || (ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"])
+            abort("Either GITHUB_TOKEN or GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY required")
+        end
+
+        item = queue.approve(match["id"])
+        queue.save
+
+        writer = Bot::PrWriter.new(token: token)
+        pr = writer.create_pr(
+            repo: item["repo"],
+            branch: "sentinel/security-fixes",
+            title: item["title"],
+            body: item["body"],
+            files: item["files"],
+            signoff: item["signoff"]
+        )
+
+        if pr
+            puts "PR created: #{pr["html_url"]}"
+            state = Bot::State.new
+            item["findings"].each do |f|
+                state.record_pr(item["repo"], pr["html_url"], f["rule"])
+            end
+            state.save
+        else
+            $stderr.puts "Failed to create PR for #{item["repo"]}"
+            exit 1
+        end
+        exit 0
+    end
+
+    if options[:reject]
+        id = options[:reject]
+        queue = Bot::Queue.new
+
+        # Support short IDs (prefix match)
+        match = queue.pending.find { |i| i["id"].start_with?(id) }
+        unless match
+            abort("No pending item found matching '#{id}'")
+        end
+
+        item = queue.reject(match["id"], reason: options[:reason])
+        queue.save
+        puts "Rejected: [#{match["id"][0, 8]}] #{item["repo"]} — #{item["title"]}"
+        puts "  Reason: #{options[:reason]}" if options[:reason]
+        exit 0
+    end
+
     token = ENV["GITHUB_TOKEN"]
     unless token || (ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"])
         abort("Either GITHUB_TOKEN or GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY required")
     end
-    Bot::ScannerBot.new(token: token, **options).run
+    Bot::ScannerBot.new(token: token, pattern: options[:pattern], dry_run: options[:dry_run], limit: options[:limit], queue_mode: options[:queue]).run
 end
 
 # TEMPORARY KILL SWITCH — remove when bot is ready for production
