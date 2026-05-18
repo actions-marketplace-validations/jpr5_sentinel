@@ -1,3 +1,4 @@
+require "yaml"
 require_relative "sha_resolver"
 require_relative "finding"
 
@@ -41,7 +42,7 @@ module AutoFix
     def self.apply(finding, raw_content, sha_resolver: nil)
         lines = raw_content.gsub("\r\n", "\n").lines
 
-        case finding.rule
+        result = case finding.rule
         when "unpinned-actions"
             fix_unpinned_action(lines, finding, sha_resolver: sha_resolver)
         when "shell-injection-expr"
@@ -57,6 +58,18 @@ module AutoFix
         else
             raw_content
         end
+
+        # Validate the result is still valid YAML
+        if result && result != raw_content
+            begin
+                YAML.safe_load(result)
+            rescue YAML::SyntaxError => e
+                $stderr.puts "AutoFix: generated invalid YAML for #{finding.rule} in #{finding.file}: #{e.message}"
+                return raw_content  # fail safe — return original
+            end
+        end
+
+        result
     end
 
     # --- unpinned-actions ---
@@ -255,10 +268,18 @@ module AutoFix
                 lines.insert(insert_at, "#{entry_indent}persist-credentials: false\n")
             end
         else
-            # No with: block — add one at same indent as uses:, entry one level deeper
-            entry_indent = uses_indent + "  "
+            # No with: block — add one as a sibling key to uses: within the step.
+            # When the line is "  - uses:", uses_indent captures the spaces before
+            # the dash.  Sibling keys (with:, env:, etc.) sit at uses_indent + "  "
+            # (aligning with "uses:" inside the sequence item).
+            if lines[target_idx] =~ /^(\s*)-\s+uses:/
+                sibling_indent = $1 + "  "
+            else
+                sibling_indent = uses_indent
+            end
+            entry_indent = sibling_indent + "  "
 
-            new_block = "#{uses_indent}with:\n#{entry_indent}persist-credentials: false\n"
+            new_block = "#{sibling_indent}with:\n#{entry_indent}persist-credentials: false\n"
             lines.insert(target_idx + 1, new_block)
         end
 

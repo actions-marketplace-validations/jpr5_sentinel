@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 
 require "json"
+require "yaml"
 $LOAD_PATH.unshift(File.join(__dir__, "..", "lib"))
 require "scanner"
 require "supply_chain"
@@ -211,7 +212,14 @@ class McpServer
                     code: raw["code"], message: raw["message"], fix: raw["fix"]
                 )
                 patched = AutoFix.apply(finding, content, sha_resolver: sha_resolver)
-                content = patched if patched && patched != content
+                if patched && patched != content
+                    begin
+                        YAML.safe_load(patched)
+                        content = patched
+                    rescue YAML::SyntaxError => e
+                        $stderr.puts "MCP fix: invalid YAML for #{finding.rule} in #{file}, skipping: #{e.message}"
+                    end
+                end
             end
 
             if content != original

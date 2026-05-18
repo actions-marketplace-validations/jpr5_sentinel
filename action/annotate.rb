@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 
 require "json"
+require "yaml"
 require "net/http"
 require "uri"
 require "open3"
@@ -79,16 +80,26 @@ def apply_fixes(findings, workspace, ai_fix: false, ai_key: nil)
             if AutoFix.can_fix?(finding)
                 result = AutoFix.apply(finding, content, sha_resolver: sha_resolver)
                 if result && result != content
-                    content = result
-                    modified = true
-                    puts "  Fixed [#{finding.rule}] in #{file}:#{finding.line} (mechanical)"
+                    begin
+                        YAML.safe_load(result)
+                        content = result
+                        modified = true
+                        puts "  Fixed [#{finding.rule}] in #{file}:#{finding.line} (mechanical)"
+                    rescue YAML::SyntaxError => e
+                        $stderr.puts "  Skipped [#{finding.rule}] in #{file}:#{finding.line}: fix produced invalid YAML: #{e.message}"
+                    end
                 end
             elsif ai_fix && ai_key && !ai_key.empty?
                 result = AiFix.apply(finding, content, api_key: ai_key)
                 if result && result != content
-                    content = result
-                    modified = true
-                    puts "  Fixed [#{finding.rule}] in #{file}:#{finding.line} (AI)"
+                    begin
+                        YAML.safe_load(result)
+                        content = result
+                        modified = true
+                        puts "  Fixed [#{finding.rule}] in #{file}:#{finding.line} (AI)"
+                    rescue YAML::SyntaxError => e
+                        $stderr.puts "  Skipped [#{finding.rule}] in #{file}:#{finding.line}: AI fix produced invalid YAML: #{e.message}"
+                    end
                 end
             end
         end

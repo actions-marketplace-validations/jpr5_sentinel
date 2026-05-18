@@ -607,6 +607,90 @@ class TestAutoFix < Minitest::Test
             "Expression in with: block should not be modified by shell injection fixer"
     end
 
+    # --- YAML validation gate ---
+
+    def test_fix_produces_valid_yaml
+        yaml = <<~YAML
+          name: CI
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+        YAML
+        finding = Finding.new(
+            rule: "missing-persist-credentials",
+            severity: :high,
+            file: "ci.yml",
+            line: 7,
+            code: "uses: actions/checkout@v4",
+            message: "Missing persist-credentials",
+            fix: "Add persist-credentials: false"
+        )
+        result = AutoFix.apply(finding, yaml)
+        # The result should be different from the original (fix was applied)
+        refute_equal yaml, result
+        # And the result must parse as valid YAML
+        assert YAML.safe_load(result), "Fixed output should be valid YAML"
+    end
+
+    def test_invalid_yaml_fix_returns_original
+        # Craft a scenario where a broken fix would produce invalid YAML.
+        # We stub AutoFix to return broken YAML from the internal fixer,
+        # but the validation gate should catch it and return the original.
+        yaml = <<~YAML
+          name: CI
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+        YAML
+        finding = Finding.new(
+            rule: "missing-persist-credentials",
+            severity: :high,
+            file: "ci.yml",
+            line: 7,
+            code: "uses: actions/checkout@v4",
+            message: "Missing persist-credentials",
+            fix: "Add persist-credentials: false"
+        )
+
+        # Temporarily replace fix_persist_credentials to return broken YAML
+        AutoFix.define_singleton_method(:fix_persist_credentials_original,
+            AutoFix.method(:fix_persist_credentials))
+
+        AutoFix.define_singleton_method(:fix_persist_credentials) do |lines, f|
+            # Return YAML with a syntax error (tab character in indentation)
+            "name: CI\n\ton: push\n  invalid:\n    - :\n"
+        end
+
+        stderr_output = StringIO.new
+        original_stderr = $stderr
+        $stderr = stderr_output
+
+        begin
+            result = AutoFix.apply(finding, yaml)
+            # The validation gate should reject the broken fix and return original
+            assert_equal yaml, result,
+                "When fix produces invalid YAML, original content should be returned"
+            # Verify a warning was emitted to stderr
+            assert_includes stderr_output.string, "AutoFix: generated invalid YAML",
+                "Should log a warning about invalid YAML"
+        ensure
+            $stderr = original_stderr
+            # Restore original method
+            AutoFix.define_singleton_method(:fix_persist_credentials,
+                AutoFix.method(:fix_persist_credentials_original))
+            # Clean up the temporary method
+            class << AutoFix
+                remove_method :fix_persist_credentials_original if method_defined?(:fix_persist_credentials_original)
+            end
+        end
+    end
+
     # Bug 5: Single-quoted expression should use double quotes in replacement
     def test_single_quoted_expression_uses_double_quotes
         yaml = <<~YAML
