@@ -6,3 +6,4 @@ coverage/
 bot/state.json
 bot/audit.log
 Gemfile.lock
+bot/queue.json

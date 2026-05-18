@@ -8,17 +8,16 @@ require "uri"
 require_relative "../lib/scanner"
 require_relative "../lib/auto_fix"
 require_relative "../lib/sha_resolver"
-require_relative "audit"
 require_relative "config"
 require_relative "github_app_auth"
 require_relative "search"
 require_relative "state"
 require_relative "pr_writer"
-require_relative "repo_conventions"
+require_relative "queue"
 
 module Bot
     class ScannerBot
-        def initialize(token: nil, pattern: "rotate", dry_run: false, limit: nil)
+        def initialize(token: nil, pattern: "rotate", dry_run: false, limit: nil, queue_mode: false)
             if ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"]
                 @auth = GitHubAppAuth.new
                 @token = token || ENV["GITHUB_TOKEN"]
@@ -33,17 +32,17 @@ module Bot
             @search = Search.new(token: @token)
             @state = State.new
             @pr_writer = PrWriter.new(token: @token)
+            @queue = Queue.new
             @scanner = build_scanner
-            @audit = Audit.new
             @pattern = pattern
             @dry_run = dry_run
+            @queue_mode = queue_mode
             @limit = limit
-            @summary = { scanned: 0, findings: 0, prs_opened: 0, skipped: 0, errors: 0 }
+            @summary = { scanned: 0, findings: 0, prs_opened: 0, queued: 0, skipped: 0, errors: 0 }
         end
 
         def run
             query = select_query
-            @audit.run_start(query[:pattern], @dry_run, @limit)
             $stderr.puts "Bot run: pattern=#{query[:pattern]} dry_run=#{@dry_run}"
             $stderr.puts "Query: #{query[:query]}"
 
@@ -59,13 +58,11 @@ module Bot
                 end
 
                 if @state.already_processed?(repo[:full_name], query[:pattern])
-                    @audit.skip(repo[:full_name], "already_processed")
                     @summary[:skipped] += 1
                     next
                 end
 
                 if @state.opted_out?(repo[:full_name])
-                    @audit.skip(repo[:full_name], "opted_out")
                     @summary[:skipped] += 1
                     next
                 end
@@ -74,15 +71,27 @@ module Bot
             end
 
             @state.save
-            @audit.run_end(@summary)
             print_summary
         end
 
         private
 
-        def repo_conventions(repo_name)
-            @_conventions_cache ||= {}
-            @_conventions_cache[repo_name] ||= RepoConventions.new(token: @token).detect(repo_name)
+        def repo_requires_dco?(repo_name)
+            gh_client = GitHubClient.new(token: @token)
+
+            # Check for DCO GitHub App config
+            dco_config = gh_client.file_exists?(repo_name, ".github/dco.yml")
+            return true if dco_config
+
+            # Check CONTRIBUTING.md for DCO references
+            contributing = gh_client.fetch_file_content(repo_name, "CONTRIBUTING.md")
+            return true if contributing&.match?(/DCO|sign.off|Signed-off-by/i)
+
+            # Check CONTRIBUTING (no extension)
+            contributing = gh_client.fetch_file_content(repo_name, "CONTRIBUTING")
+            return true if contributing&.match?(/DCO|sign.off|Signed-off-by/i)
+
+            false
         end
 
         def build_scanner
@@ -99,62 +108,6 @@ module Bot
             end
         end
 
-        def has_open_sentinel_pr?(repo_name)
-            gh_client = GitHubClient.new(token: @token)
-
-            # Determine fork owner (our authenticated user)
-            user = gh_client.api_get("/user") rescue nil
-            return false unless user && user["login"]
-            fork_owner = user["login"]
-
-            repo_short = repo_name.split("/").last
-
-            # Check if sentinel/security-fixes branch exists on our fork
-            ref = gh_client.api_get("/repos/#{fork_owner}/#{repo_short}/git/ref/heads/sentinel/security-fixes") rescue nil
-            return false unless ref
-
-            # Check if there's an open PR from this branch
-            prs = gh_client.api_get("/repos/#{repo_name}/pulls?head=#{fork_owner}:sentinel/security-fixes&state=open") rescue nil
-            prs.is_a?(Array) && !prs.empty?
-        end
-
-        def check_api_rate_limit
-            gh_client = GitHubClient.new(token: @token)
-            result = gh_client.api_get("/rate_limit") rescue nil
-            return nil unless result
-            result.dig("resources", "core", "remaining")
-        end
-
-        def preflight_check(repo, fixed_files)
-            # 1. Not opted out
-            return false if @state.opted_out?(repo[:full_name])
-
-            # 2. No existing open PR
-            if has_open_sentinel_pr?(repo[:full_name])
-                $stderr.puts "  Open Sentinel PR already exists, skipping"
-                return false
-            end
-
-            # 3. All fixed YAML is valid
-            fixed_files.each do |path, content|
-                begin
-                    YAML.safe_load(content)
-                rescue YAML::SyntaxError => e
-                    $stderr.puts "  YAML validation failed for #{path}: #{e.message}"
-                    return false
-                end
-            end
-
-            # 4. Rate limit has headroom
-            rate = check_api_rate_limit
-            if rate && rate < 500
-                $stderr.puts "  API rate limit too low (#{rate} remaining), skipping"
-                return false
-            end
-
-            true
-        end
-
         def scan_and_fix(repo, pattern)
             $stderr.puts "Scanning #{repo[:full_name]} (#{repo[:stars]} stars)..."
             @summary[:scanned] += 1
@@ -164,7 +117,6 @@ module Bot
                 findings = result[:findings]
             rescue => e
                 $stderr.puts "  Error scanning: #{e.message}"
-                @audit.error(repo[:full_name], e.message)
                 @summary[:errors] += 1
                 return
             end
@@ -176,7 +128,6 @@ module Bot
             sentinel_workflow = workflows.any? { |w| w[:content]&.match?(/uses:\s*jpr5\/sentinel/) }
             if sentinel_config || sentinel_workflow
                 $stderr.puts "  Already uses Sentinel, skipping"
-                @audit.skip(repo[:full_name], "already_uses_sentinel")
                 @summary[:skipped] += 1
                 return
             end
@@ -187,7 +138,6 @@ module Bot
             }
 
             @state.record_scan(repo[:full_name], critical_findings)
-            @audit.scan(repo[:full_name], critical_findings.length)
 
             if critical_findings.empty?
                 $stderr.puts "  No critical findings"
@@ -205,7 +155,6 @@ module Bot
                         opt_out_config = YAML.safe_load(opt_out_content)
                         if opt_out_config.is_a?(Hash) && opt_out_config["enabled"] == false
                             $stderr.puts "  Repo has opted out"
-                            @audit.opt_out(repo[:full_name])
                             @state.record_opt_out(repo[:full_name])
                             @summary[:skipped] += 1
                             return
@@ -216,20 +165,14 @@ module Bot
                 end
             end
 
-            # Detect repo conventions (CLA, DCO, conventional commits, PR template)
-            conventions = repo_conventions(repo[:full_name])
-
-            # Skip if CLA required (we can't sign it automatically)
-            if conventions[:cla]
-                $stderr.puts "  Skipping: #{conventions[:cla]} CLA required"
-                @summary[:skipped] += 1
-                return
-            end
-
             # Collect all fixes into one PR
             sha_resolver = ShaResolver.new(token: @token)
 
-            signoff = conventions[:dco] ? Config::SIGNOFF_IDENTITY : nil
+            signoff = if repo_requires_dco?(repo[:full_name])
+                Config::SIGNOFF_IDENTITY
+            else
+                nil
+            end
 
             fixed_files = {}
             fixed_findings = []    # findings that were auto-fixed
@@ -246,7 +189,6 @@ module Bot
                         if result && result != patched
                             patched = result
                             fixed_findings << finding
-                            @audit.fix(repo[:full_name], finding.rule, file)
                         else
                             advisory_findings << finding
                         end
@@ -269,16 +211,7 @@ module Bot
             # Build consolidated PR
             total = fixed_findings.length + advisory_findings.length
             branch = "sentinel/security-fixes"
-
-            title = if conventions[:conventional_commits]
-                "fix(ci): resolve #{total} security finding#{"s" if total != 1} in GitHub Actions workflows"
-            else
-                "Security: Fix #{total} finding#{"s" if total != 1} in GitHub Actions workflows"
-            end
-
-            if conventions[:pr_template]
-                $stderr.puts "  Note: repo has PR template — PR may need manual edits"
-            end
+            title = "Security: Fix #{total} finding#{"s" if total != 1} in GitHub Actions workflows"
 
             body = build_consolidated_pr_body(
                 repo: repo[:full_name],
@@ -293,11 +226,19 @@ module Bot
                 return
             end
 
-            # Pre-flight validation before creating PR
-            pr_files = fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files
-            unless preflight_check(repo, pr_files)
-                $stderr.puts "  Pre-flight check failed, skipping PR creation"
-                @summary[:skipped] += 1
+            if @queue_mode
+                all_findings = fixed_findings + advisory_findings
+                @queue.add(
+                    repo: repo[:full_name],
+                    title: title,
+                    body: body,
+                    files: fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files,
+                    findings: all_findings,
+                    signoff: signoff
+                )
+                @queue.save
+                $stderr.puts "  Queued for review: #{title}"
+                @summary[:queued] += 1
                 return
             end
 
@@ -308,13 +249,12 @@ module Bot
                 branch: branch,
                 title: title,
                 body: body,
-                files: pr_files,
+                files: fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files,
                 signoff: signoff
             )
 
             if pr
                 $stderr.puts "  Opened PR: #{pr["html_url"]}"
-                @audit.pr_created(repo[:full_name], pr["html_url"])
                 # Record one PR per rule for state tracking
                 (fixed_findings + advisory_findings).map(&:rule).uniq.each do |rule|
                     @state.record_pr(repo[:full_name], pr["html_url"], rule)
@@ -322,7 +262,6 @@ module Bot
                 @summary[:prs_opened] += 1
             else
                 $stderr.puts "  Failed to create PR"
-                @audit.pr_failed(repo[:full_name], "create_pr_returned_nil")
                 @summary[:errors] += 1
             end
         end
@@ -421,6 +360,7 @@ module Bot
             $stderr.puts "  Repos scanned: #{s[:scanned]}"
             $stderr.puts "  Critical findings: #{s[:findings]}"
             $stderr.puts "  PRs opened: #{s[:prs_opened]}"
+            $stderr.puts "  Queued for review: #{s[:queued]}" if s[:queued] > 0
             $stderr.puts "  Skipped (processed/opted-out): #{s[:skipped]}"
             $stderr.puts "  Errors: #{s[:errors]}"
 
@@ -451,11 +391,24 @@ if __FILE__ == $0
             options[:dry_run] = true
         end
 
-        opts.on("--live", "Enable live mode (creates real PRs). Requires SENTINEL_BOT_LIVE=true env var.") do
-            if ENV["SENTINEL_BOT_LIVE"] != "true"
-                abort("--live requires SENTINEL_BOT_LIVE=true environment variable as safety gate")
-            end
-            options[:dry_run] = false
+        opts.on("--queue", "Generate fixes and queue for review (don't submit PRs)") do
+            options[:queue] = true
+        end
+
+        opts.on("--review", "Review pending approval queue") do
+            options[:review] = true
+        end
+
+        opts.on("--approve ID", "Approve and submit a queued PR") do |id|
+            options[:approve] = id
+        end
+
+        opts.on("--reject ID", "Reject a queued PR") do |id|
+            options[:reject] = id
+        end
+
+        opts.on("--reason REASON", "Reason for rejection (use with --reject)") do |r|
+            options[:reason] = r
         end
 
         opts.on("--limit N", Integer, "Max repos to scan (default: unlimited)") do |n|
@@ -468,17 +421,93 @@ if __FILE__ == $0
         end
     end.parse!
 
-    # Safety default: live mode without explicit --limit caps at 5
-    if !options[:dry_run] && options[:limit].nil?
-        options[:limit] = 5
-        $stderr.puts "Live mode: defaulting to --limit 5"
+    # Queue management commands don't need a GitHub token
+    if options[:review]
+        queue = Bot::Queue.new
+        pending = queue.pending
+        if pending.empty?
+            puts "No pending PRs in the queue."
+        else
+            puts "Pending PRs (#{pending.length}):"
+            puts
+            pending.each do |item|
+                id_short = item["id"][0, 8]
+                findings_summary = item["findings"].map { |f| "  #{f["rule"]}: #{f["file"]}:#{f["line"]}" }
+                puts "[#{id_short}] #{item["repo"]} — #{item["title"]}"
+                findings_summary.each { |line| puts line }
+                puts "  Queued: #{item["queued_at"]}"
+                puts
+            end
+            puts "sentinel bot --approve <id>"
+            puts "sentinel bot --reject <id> --reason \"reason\""
+        end
+        exit 0
+    end
+
+    if options[:approve]
+        id = options[:approve]
+        queue = Bot::Queue.new
+
+        # Support short IDs (prefix match)
+        match = queue.pending.find { |i| i["id"].start_with?(id) }
+        unless match
+            abort("No pending item found matching '#{id}'")
+        end
+
+        token = ENV["GITHUB_TOKEN"]
+        unless token || (ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"])
+            abort("Either GITHUB_TOKEN or GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY required")
+        end
+
+        item = queue.approve(match["id"])
+        queue.save
+
+        writer = Bot::PrWriter.new(token: token)
+        pr = writer.create_pr(
+            repo: item["repo"],
+            branch: "sentinel/security-fixes",
+            title: item["title"],
+            body: item["body"],
+            files: item["files"],
+            signoff: item["signoff"]
+        )
+
+        if pr
+            puts "PR created: #{pr["html_url"]}"
+            state = Bot::State.new
+            item["findings"].each do |f|
+                state.record_pr(item["repo"], pr["html_url"], f["rule"])
+            end
+            state.save
+        else
+            $stderr.puts "Failed to create PR for #{item["repo"]}"
+            exit 1
+        end
+        exit 0
+    end
+
+    if options[:reject]
+        id = options[:reject]
+        queue = Bot::Queue.new
+
+        # Support short IDs (prefix match)
+        match = queue.pending.find { |i| i["id"].start_with?(id) }
+        unless match
+            abort("No pending item found matching '#{id}'")
+        end
+
+        item = queue.reject(match["id"], reason: options[:reason])
+        queue.save
+        puts "Rejected: [#{match["id"][0, 8]}] #{item["repo"]} — #{item["title"]}"
+        puts "  Reason: #{options[:reason]}" if options[:reason]
+        exit 0
     end
 
     token = ENV["GITHUB_TOKEN"]
     unless token || (ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"])
         abort("Either GITHUB_TOKEN or GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY required")
     end
-    Bot::ScannerBot.new(token: token, **options).run
+    Bot::ScannerBot.new(token: token, pattern: options[:pattern], dry_run: options[:dry_run], limit: options[:limit], queue_mode: options[:queue]).run
 end
 
 # TEMPORARY KILL SWITCH — remove when bot is ready for production
