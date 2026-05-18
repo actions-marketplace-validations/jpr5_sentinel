@@ -355,7 +355,7 @@ end
 
 # CLI entry point
 if __FILE__ == $0
-    options = { pattern: "rotate", dry_run: false, limit: nil }
+    options = { pattern: "rotate", dry_run: true, limit: nil }
 
     OptionParser.new do |opts|
         opts.banner = "Usage: ruby bot/scanner_bot.rb [options]"
@@ -387,3 +387,6 @@ if __FILE__ == $0
     end
     Bot::ScannerBot.new(token: token, **options).run
 end
+
+# TEMPORARY KILL SWITCH — remove when bot is ready for production
+# Added 2026-05-18 after uncontrolled PR spam incident

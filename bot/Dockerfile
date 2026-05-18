@@ -9,5 +9,6 @@ COPY bin/ /sentinel/bin/
 
 WORKDIR /sentinel
 
-# Default: run the bot. Override CMD for the web handler.
-CMD ["ruby", "bot/scanner_bot.rb", "--pattern", "rotate"]
+# Default: sleep forever. The bot runs via Railway cron trigger, not on container start.
+# This prevents accidental live scans on every deploy.
+CMD ["sleep", "infinity"]
