@@ -1,0 +1,432 @@
+require "minitest/autorun"
+require "json"
+require "time"
+
+require_relative "../../bot/config"
+require_relative "../../bot/state"
+require_relative "../../bot/sync"
+
+# Stub State that tracks calls without needing a real file
+class StubState
+    attr_reader :updates
+
+    def initialize(prs = [])
+        @prs = prs  # Array of {repo:, pr: {hash}}
+        @updates = []
+    end
+
+    def non_terminal_prs
+        @prs.reject { |entry| entry[:pr]["status"] == "merged" }
+    end
+
+    def all_tracked_prs
+        @prs
+    end
+
+    def update_pr_status(repo_name, number, status, note: nil)
+        @updates << { repo: repo_name, number: number, status: status, note: note }
+        # Also update the in-memory PR so sync_all sees the change
+        entry = @prs.find { |e| e[:repo] == repo_name && e[:pr]["number"] == number }
+        if entry
+            entry[:pr]["status"] = status
+            entry[:pr]["note"] = note
+        end
+    end
+end
+
+class TestBotSync < Minitest::Test
+    def setup
+        @token = "test-token"
+    end
+
+    # Helper: build a PR entry hash
+    def make_pr(number:, status: "open", url: nil)
+        url ||= "https://github.com/owner/repo/pull/#{number}"
+        {
+            "url" => url,
+            "number" => number,
+            "status" => status,
+            "note" => nil,
+            "created_at" => Time.now.utc.iso8601,
+            "last_updated_at" => Time.now.utc.iso8601,
+            "synced_at" => nil,
+        }
+    end
+
+    # Helper: stub api_get responses on a Sync instance
+    def stub_api(sync, responses = {})
+        sync.define_singleton_method(:api_get) do |path|
+            # Strip query params so stubs keyed by path-only still match
+            base_path = path.split("?").first
+            responses[path] || responses[base_path]
+        end
+    end
+
+    # Helper: build a standard PR API response
+    def pr_response(number:, state: "open", merged: false, head_sha: "abc123")
+        {
+            "number" => number,
+            "state" => state,
+            "merged" => merged,
+            "head" => { "sha" => head_sha },
+        }
+    end
+
+    # Helper: build a reviews API response
+    def reviews_response(reviews = [])
+        reviews.map do |r|
+            {
+                "user" => { "login" => r[:user] },
+                "state" => r[:state],
+            }
+        end
+    end
+
+    # Helper: build a check-runs API response
+    def check_runs_response(runs = [])
+        {
+            "check_runs" => runs.map do |r|
+                {
+                    "name" => r[:name],
+                    "conclusion" => r[:conclusion],
+                    "status" => r[:status] || "completed",
+                }
+            end,
+        }
+    end
+
+    # -------------------------------------------------------
+    # Test 1: PR that is merged → status becomes "merged"
+    # -------------------------------------------------------
+    def test_merged_pr
+        pr = make_pr(number: 100)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/100" => pr_response(number: 100, state: "closed", merged: true),
+            "/repos/owner/repo/pulls/100/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "merged", result
+        assert_equal 1, state.updates.length
+        assert_equal "merged", state.updates.first[:status]
+        assert_nil state.updates.first[:note]
+    end
+
+    # -------------------------------------------------------
+    # Test 2: PR that is closed (not merged) → "closed"
+    # -------------------------------------------------------
+    def test_closed_not_merged_pr
+        pr = make_pr(number: 200)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/200" => pr_response(number: 200, state: "closed", merged: false),
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "closed", result
+        assert_equal "closed", state.updates.first[:status]
+    end
+
+    # -------------------------------------------------------
+    # Test 3: PR open with passing checks → stays "open"
+    # -------------------------------------------------------
+    def test_open_pr_with_passing_checks
+        pr = make_pr(number: 300)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/300" => pr_response(number: 300),
+            "/repos/owner/repo/pulls/300/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response([
+                { name: "lint", conclusion: "success" },
+                { name: "test", conclusion: "success" },
+            ]),
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+        assert_nil state.updates.first[:note]
+    end
+
+    # -------------------------------------------------------
+    # Test 4: PR open with changes_requested → "blocked"
+    # -------------------------------------------------------
+    def test_open_pr_with_changes_requested
+        pr = make_pr(number: 400)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/400" => pr_response(number: 400),
+            "/repos/owner/repo/pulls/400/reviews" => reviews_response([
+                { user: "AlemTuzlak", state: "CHANGES_REQUESTED" },
+            ]),
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "blocked", result
+        assert_equal "Changes requested by @AlemTuzlak", state.updates.first[:note]
+    end
+
+    # -------------------------------------------------------
+    # Test 5: PR open with failing check-run → "blocked"
+    # -------------------------------------------------------
+    def test_open_pr_with_failing_ci
+        pr = make_pr(number: 500)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/500" => pr_response(number: 500),
+            "/repos/owner/repo/pulls/500/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response([
+                { name: "lint", conclusion: "failure" },
+                { name: "test", conclusion: "success" },
+            ]),
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "blocked", result
+        assert_equal "CI failing: lint", state.updates.first[:note]
+    end
+
+    # -------------------------------------------------------
+    # Test 6: CLA/DCO check failing → note mentions CLA/DCO
+    # -------------------------------------------------------
+    def test_cla_dco_check_failing
+        pr = make_pr(number: 600)
+        state = StubState.new([{ repo: "cncf/toc", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/cncf/toc/pulls/600" => pr_response(number: 600),
+            "/repos/cncf/toc/pulls/600/reviews" => reviews_response,
+            "/repos/cncf/toc/commits/abc123/check-runs" => check_runs_response([
+                { name: "DCO", conclusion: "failure" },
+                { name: "test", conclusion: "success" },
+            ]),
+        })
+
+        result = sync.sync_pr("cncf/toc", pr)
+        assert_equal "blocked", result
+        assert_includes state.updates.first[:note], "CLA/DCO check failing"
+    end
+
+    # -------------------------------------------------------
+    # Test 7: Multiple blockers combine in note
+    # -------------------------------------------------------
+    def test_multiple_blockers_combined
+        pr = make_pr(number: 700)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/700" => pr_response(number: 700),
+            "/repos/owner/repo/pulls/700/reviews" => reviews_response([
+                { user: "reviewer1", state: "CHANGES_REQUESTED" },
+            ]),
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response([
+                { name: "lint", conclusion: "failure" },
+            ]),
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "blocked", result
+
+        note = state.updates.first[:note]
+        assert_includes note, "Changes requested by @reviewer1"
+        assert_includes note, "CI failing: lint"
+        # Joined with "; "
+        assert_includes note, "; "
+    end
+
+    # -------------------------------------------------------
+    # Test 8: API error (nil response) handled gracefully
+    # -------------------------------------------------------
+    def test_api_error_returns_nil
+        pr = make_pr(number: 800)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/800" => nil,  # API returned 404/error
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_nil result
+        assert_empty state.updates
+    end
+
+    # -------------------------------------------------------
+    # Test 9: Merged PRs skipped unless force: true
+    # -------------------------------------------------------
+    def test_merged_prs_skipped_in_normal_sync
+        pr_merged = make_pr(number: 900, status: "merged")
+        pr_open = make_pr(number: 901, status: "open")
+        state = StubState.new([
+            { repo: "owner/repo", pr: pr_merged },
+            { repo: "owner/repo", pr: pr_open },
+        ])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/901" => pr_response(number: 901),
+            "/repos/owner/repo/pulls/901/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+        })
+
+        results = sync.sync_all
+        # Only the open PR should be synced (non_terminal_prs excludes merged)
+        assert_equal 1, results[:synced]
+    end
+
+    def test_merged_prs_included_with_force
+        pr_merged = make_pr(number: 900, status: "merged")
+        pr_open = make_pr(number: 901, status: "open")
+        state = StubState.new([
+            { repo: "owner/repo", pr: pr_merged },
+            { repo: "owner/repo", pr: pr_open },
+        ])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/900" => pr_response(number: 900, state: "closed", merged: true, head_sha: "sha900"),
+            "/repos/owner/repo/pulls/900/reviews" => reviews_response,
+            "/repos/owner/repo/commits/sha900/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/901" => pr_response(number: 901, head_sha: "sha901"),
+            "/repos/owner/repo/pulls/901/reviews" => reviews_response,
+            "/repos/owner/repo/commits/sha901/check-runs" => check_runs_response,
+        })
+
+        results = sync.sync_all(force: true)
+        # Both PRs should be synced
+        assert_equal 2, results[:synced]
+    end
+
+    # -------------------------------------------------------
+    # Additional edge cases
+    # -------------------------------------------------------
+
+    def test_review_approved_after_changes_requested_is_not_blocked
+        pr = make_pr(number: 1000)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1000" => pr_response(number: 1000),
+            "/repos/owner/repo/pulls/1000/reviews" => reviews_response([
+                { user: "reviewer1", state: "CHANGES_REQUESTED" },
+                { user: "reviewer1", state: "APPROVED" },  # Later approval supersedes
+            ]),
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+        assert_nil state.updates.first[:note]
+    end
+
+    def test_closed_pr_reopened_transitions_back
+        pr = make_pr(number: 1100, status: "closed")
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1100" => pr_response(number: 1100, state: "open"),
+            "/repos/owner/repo/pulls/1100/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+    end
+
+    def test_nil_pr_number_returns_nil
+        pr = make_pr(number: nil)
+        pr.delete("number")
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_nil result
+    end
+
+    def test_bad_repo_format_returns_nil
+        pr = make_pr(number: 1200)
+        state = StubState.new([{ repo: "badrepo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        result = sync.sync_pr("badrepo", pr)
+        assert_nil result
+    end
+
+    def test_sync_all_counts_errors
+        pr = make_pr(number: 1300)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1300" => nil,  # API error
+        })
+
+        results = sync.sync_all
+        assert_equal 0, results[:synced]
+        assert_equal 1, results[:errors]
+    end
+
+    def test_cla_check_case_insensitive
+        pr = make_pr(number: 1400)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1400" => pr_response(number: 1400),
+            "/repos/owner/repo/pulls/1400/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response([
+                { name: "CLA Check", conclusion: "failure" },
+            ]),
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "blocked", result
+        assert_includes state.updates.first[:note], "CLA/DCO check failing"
+    end
+
+    def test_reviews_api_returns_nil_gracefully
+        pr = make_pr(number: 1500)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1500" => pr_response(number: 1500),
+            "/repos/owner/repo/pulls/1500/reviews" => nil,  # API error
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+    end
+
+    def test_check_runs_api_returns_nil_gracefully
+        pr = make_pr(number: 1600)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1600" => pr_response(number: 1600),
+            "/repos/owner/repo/pulls/1600/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => nil,  # API error
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+    end
+end
