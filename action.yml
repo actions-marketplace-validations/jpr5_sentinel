@@ -1,5 +1,5 @@
 name: 'Workflow Security Scanner'
-description: 'Scan GitHub Actions workflows for 31 security vulnerabilities -- deterministic pattern matching.'
+description: 'Scan GitHub Actions workflows for 32 security vulnerabilities -- deterministic pattern matching.'
 author: 'jpr5'
 
 inputs:
@@ -16,7 +16,7 @@ inputs:
     required: false
     default: 'false'
   anthropic-key:
-    description: 'Anthropic API key — enables AI-powered fixes for all 31 rules when fix is true'
+    description: 'Anthropic API key — enables AI-powered fixes for all 32 rules when fix is true'
     required: false
     default: ''
 

@@ -7,7 +7,7 @@
 ![Ruby](https://img.shields.io/badge/ruby-3.2%2B-red)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-Scan GitHub Actions workflows for 31 security vulnerabilities. Optional AI-powered remediation via Claude. Pure Ruby stdlib.
+Scan GitHub Actions workflows for 32 security vulnerabilities. Optional AI-powered remediation via Claude. Pure Ruby stdlib.
 
 Documentation: https://sentinel.copilotkit.dev
 
@@ -102,7 +102,7 @@ medium as warnings, low as notices.
 | Name | Default | Description |
 |------|---------|-------------|
 | `fix` | `false` | Auto-fix findings. Pushes to PR branch, or creates fix PR on main. |
-| `anthropic-key` | -- | Anthropic API key -- enables AI-powered fixes for all 31 rules |
+| `anthropic-key` | -- | Anthropic API key -- enables AI-powered fixes for all 32 rules |
 
 **Fix mode outputs:**
 
@@ -208,10 +208,11 @@ sentinel scan --local . --platform bitbucket # Bitbucket only
 | 29 | `ide-config-injection` | critical | Workflow writes to IDE/AI config files (.claude/, .vscode/tasks.json) |
 | 30 | `dangerous-lifecycle-scripts` | medium | Package install without --ignore-scripts in workflows with secrets |
 | 31 | `github-dependency-refs` | medium | Direct GitHub commit/branch ref in package install |
+| 32 | `jq-arg-escape-sequences` | medium | jq `--arg` value contains backslash escape sequences that won't be interpreted |
 
 ## Auto-Fix
 
-Sentinel can automatically fix findings -- 6 rules mechanically, all 31 with AI:
+Sentinel can automatically fix findings -- 6 rules mechanically, all 32 with AI:
 
 ```bash
 # Mechanical fixes (free, deterministic)
