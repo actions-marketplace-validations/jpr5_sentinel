@@ -1,0 +1,31 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        ruby: ['3.2', '3.3']
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: ruby/setup-ruby@a4effe49ee23b5e74e25b9baa087743e6fff56ee # v1.237.0
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+
+      - name: Run tests
+        run: bundle exec ruby -Ilib -Itest -e "Dir['test/**/*.rb'].each { |f| require_relative f }"
+
+      - name: Syntax check
+        run: find lib test -name '*.rb' -exec ruby -c {} + > /dev/null
