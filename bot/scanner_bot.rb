@@ -13,6 +13,7 @@ require_relative "github_app_auth"
 require_relative "search"
 require_relative "state"
 require_relative "pr_writer"
+require_relative "repo_conventions"
 
 module Bot
     class ScannerBot
@@ -73,22 +74,9 @@ module Bot
 
         private
 
-        def repo_requires_dco?(repo_name)
-            gh_client = GitHubClient.new(token: @token)
-
-            # Check for DCO GitHub App config
-            dco_config = gh_client.file_exists?(repo_name, ".github/dco.yml")
-            return true if dco_config
-
-            # Check CONTRIBUTING.md for DCO references
-            contributing = gh_client.fetch_file_content(repo_name, "CONTRIBUTING.md")
-            return true if contributing&.match?(/DCO|sign.off|Signed-off-by/i)
-
-            # Check CONTRIBUTING (no extension)
-            contributing = gh_client.fetch_file_content(repo_name, "CONTRIBUTING")
-            return true if contributing&.match?(/DCO|sign.off|Signed-off-by/i)
-
-            false
+        def repo_conventions(repo_name)
+            @_conventions_cache ||= {}
+            @_conventions_cache[repo_name] ||= RepoConventions.new(token: @token).detect(repo_name)
         end
 
         def build_scanner
@@ -218,14 +206,20 @@ module Bot
                 end
             end
 
+            # Detect repo conventions (CLA, DCO, conventional commits, PR template)
+            conventions = repo_conventions(repo[:full_name])
+
+            # Skip if CLA required (we can't sign it automatically)
+            if conventions[:cla]
+                $stderr.puts "  Skipping: #{conventions[:cla]} CLA required"
+                @summary[:skipped] += 1
+                return
+            end
+
             # Collect all fixes into one PR
             sha_resolver = ShaResolver.new(token: @token)
 
-            signoff = if repo_requires_dco?(repo[:full_name])
-                Config::SIGNOFF_IDENTITY
-            else
-                nil
-            end
+            signoff = conventions[:dco] ? Config::SIGNOFF_IDENTITY : nil
 
             fixed_files = {}
             fixed_findings = []    # findings that were auto-fixed
@@ -264,7 +258,16 @@ module Bot
             # Build consolidated PR
             total = fixed_findings.length + advisory_findings.length
             branch = "sentinel/security-fixes"
-            title = "Security: Fix #{total} finding#{"s" if total != 1} in GitHub Actions workflows"
+
+            title = if conventions[:conventional_commits]
+                "fix(ci): resolve #{total} security finding#{"s" if total != 1} in GitHub Actions workflows"
+            else
+                "Security: Fix #{total} finding#{"s" if total != 1} in GitHub Actions workflows"
+            end
+
+            if conventions[:pr_template]
+                $stderr.puts "  Note: repo has PR template — PR may need manual edits"
+            end
 
             body = build_consolidated_pr_body(
                 repo: repo[:full_name],
