@@ -4,7 +4,7 @@ require_relative "test_helper"
 # Pull in Bot modules
 $LOAD_PATH.unshift(File.join(__dir__, "..", "bot"))
 require_relative "../bot/config"
-require_relative "../bot/scanner_bot"
+require_relative "../bot/repo_conventions"
 
 # Simple stub GitHubClient for DCO tests
 class DcoStubClient
@@ -26,15 +26,14 @@ end
 
 class TestDco < Minitest::Test
     def setup
-        @bot = Bot::ScannerBot.allocate
-        @bot.instance_variable_set(:@token, "fake-token")
         @stub_client = DcoStubClient.new
         @original_new = GitHubClient.method(:new)
+        stub_github_client!
+        @conventions = Bot::RepoConventions.new(token: "fake-token")
     end
 
     def teardown
         # Restore original GitHubClient.new
-        stub = @stub_client # capture for closure
         original = @original_new
         GitHubClient.define_singleton_method(:new) { |**kwargs| original.call(**kwargs) }
     end
@@ -44,47 +43,40 @@ class TestDco < Minitest::Test
         GitHubClient.define_singleton_method(:new) { |**kwargs| stub }
     end
 
-    # ── repo_requires_dco? ───────────────────────────────────────────────────
+    # ── requires_dco? (now via RepoConventions) ─────────────────────────────
 
     def test_dco_detected_via_dco_yml
         @stub_client.file_exists_map[["owner/repo", ".github/dco.yml"]] = true
-        stub_github_client!
-        assert @bot.send(:repo_requires_dco?, "owner/repo")
+        assert @conventions.requires_dco?("owner/repo")
     end
 
     def test_dco_detected_via_contributing_md
         @stub_client.file_content_map[["owner/repo", "CONTRIBUTING.md"]] = "Please sign-off your commits (DCO required)."
-        stub_github_client!
-        assert @bot.send(:repo_requires_dco?, "owner/repo")
+        assert @conventions.requires_dco?("owner/repo")
     end
 
     def test_dco_detected_via_signed_off_by_in_contributing
         @stub_client.file_content_map[["owner/repo", "CONTRIBUTING.md"]] = "All commits must include a Signed-off-by line."
-        stub_github_client!
-        assert @bot.send(:repo_requires_dco?, "owner/repo")
+        assert @conventions.requires_dco?("owner/repo")
     end
 
     def test_dco_detected_via_sign_off_in_contributing
         @stub_client.file_content_map[["owner/repo", "CONTRIBUTING.md"]] = "You must sign off on every commit."
-        stub_github_client!
-        assert @bot.send(:repo_requires_dco?, "owner/repo")
+        assert @conventions.requires_dco?("owner/repo")
     end
 
     def test_dco_detected_via_contributing_no_extension
         @stub_client.file_content_map[["owner/repo", "CONTRIBUTING"]] = "This project uses DCO for contributions."
-        stub_github_client!
-        assert @bot.send(:repo_requires_dco?, "owner/repo")
+        assert @conventions.requires_dco?("owner/repo")
     end
 
     def test_dco_not_required_when_nothing_found
-        stub_github_client!
-        refute @bot.send(:repo_requires_dco?, "owner/repo")
+        refute @conventions.requires_dco?("owner/repo")
     end
 
     def test_dco_not_required_when_contributing_has_no_dco_mention
         @stub_client.file_content_map[["owner/repo", "CONTRIBUTING.md"]] = "Please follow our coding guidelines."
-        stub_github_client!
-        refute @bot.send(:repo_requires_dco?, "owner/repo")
+        refute @conventions.requires_dco?("owner/repo")
     end
 
     # ── Config constant ──────────────────────────────────────────────────────
