@@ -2,6 +2,7 @@
 
 require "sinatra"
 require "json"
+require "time"
 require_relative "audit"
 require_relative "config"
 require_relative "github_app_auth"
@@ -25,8 +26,118 @@ get "/" do
       <h1>&#x1f6e1;&#xfe0f; Sentinel Bot</h1>
       <p>This bot scans popular open-source repos for CI/CD security vulnerabilities
          and opens fix PRs.</p>
-      <p><a href="https://sentinel.copilotkit.dev">Learn more</a> &middot;
+      <p><a href="/dashboard">Dashboard</a> &middot;
+         <a href="https://sentinel.copilotkit.dev">Learn more</a> &middot;
          <a href="https://github.com/jpr5/sentinel">Source code</a></p>
+    </body>
+    </html>
+    HTML
+end
+
+# PR lifecycle dashboard
+get "/dashboard" do
+    state = Bot::State.new
+    prs = state.all_tracked_prs
+
+    status_priority = { "blocked" => 0, "open" => 1, "closed" => 2, "merged" => 3 }
+    prs.sort_by! do |entry|
+        [
+            status_priority[entry[:pr]["status"]] || 99,
+            -(Time.parse(entry[:pr]["last_updated_at"]) rescue Time.at(0)).to_f
+        ]
+    end
+
+    counts = { "merged" => 0, "open" => 0, "blocked" => 0, "closed" => 0 }
+    prs.each { |e| counts[e[:pr]["status"]] = (counts[e[:pr]["status"]] || 0) + 1 }
+
+    if prs.empty?
+        table_html = <<~EMPTY
+        <div class="empty">
+          <p>No tracked PRs yet.</p>
+          <p>Run <code>sentinel bot --bootstrap</code> to seed from GitHub.</p>
+        </div>
+        EMPTY
+    else
+        rows = prs.map do |entry|
+            repo = entry[:repo]
+            pr = entry[:pr]
+            number = pr["number"]
+            status = pr["status"] || "open"
+            created = format_time_pacific(pr["created_at"])
+            updated = format_time_pacific(pr["last_updated_at"])
+            note = pr["note"]
+
+            <<~ROW
+            <tr>
+              <td><a href="https://github.com/#{escape_html(repo)}">#{escape_html(repo)}</a></td>
+              <td><a href="https://github.com/#{escape_html(repo)}/pull/#{number}">##{number}</a></td>
+              <td><span class="status status-#{escape_html(status)}">#{escape_html(status)}</span></td>
+              <td>#{escape_html(created)}</td>
+              <td>#{escape_html(updated)}</td>
+              <td class="note">#{note ? escape_html(note) : ""}</td>
+            </tr>
+            ROW
+        end.join
+
+        summary_parts = []
+        summary_parts << "#{counts["merged"]} merged" if counts["merged"] > 0
+        summary_parts << "#{counts["open"]} open" if counts["open"] > 0
+        summary_parts << "#{counts["blocked"]} blocked" if counts["blocked"] > 0
+        summary_parts << "#{counts["closed"]} closed" if counts["closed"] > 0
+
+        table_html = <<~TABLE
+        <table>
+          <thead>
+            <tr>
+              <th>Repo</th>
+              <th>PR</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Updated</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            #{rows}
+          </tbody>
+        </table>
+        <div class="summary">#{summary_parts.join(", ")}</div>
+        TABLE
+    end
+
+    content_type :html
+    <<~HTML
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Dashboard — Sentinel</title>
+      <style>
+        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e8e8f0; max-width: 1100px; margin: 50px auto; padding: 0 20px; }
+        h1 { color: #ff4444; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #2a2a3a; color: #8888a0; font-weight: 500; }
+        td { padding: 8px 12px; border-bottom: 1px solid #1a1a2a; }
+        a { color: #ff4444; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; }
+        .status-merged { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .status-open { background: rgba(234,179,8,0.15); color: #eab308; }
+        .status-blocked { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .status-closed { background: rgba(107,114,128,0.15); color: #6b7280; }
+        .note { color: #8888a0; font-size: 0.85rem; }
+        .summary { margin-top: 1.5rem; color: #8888a0; font-size: 0.9rem; }
+        .nav { font-size: 0.85rem; color: #8888a0; margin-bottom: 2rem; }
+        .nav a { color: #8888a0; }
+        .empty { text-align: center; padding: 3rem; color: #8888a0; }
+      </style>
+    </head>
+    <body>
+      <div class="nav">
+        <a href="https://sentinel.copilotkit.dev">sentinel</a> / dashboard
+      </div>
+      <h1>PR Tracker</h1>
+      #{table_html}
     </body>
     </html>
     HTML
@@ -188,7 +299,7 @@ post "/adopt" do
         <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 0 20px;">
           <h1>&#x2705; PR created</h1>
           <p>A pull request has been opened to add Sentinel to <strong>#{escape_html(repo)}</strong>.</p>
-          <p><a href="#{pr["html_url"]}">Review the PR &rarr;</a></p>
+          <p><a href="#{escape_html(pr["html_url"])}">Review the PR &rarr;</a></p>
         </body>
         </html>
         HTML
@@ -272,6 +383,25 @@ def consume_token(token)
     state = Bot::State.new
     state.consume_token(token)
     state.save
+end
+
+def format_time_pacific(iso_string)
+    return "-" unless iso_string
+    utc = Time.parse(iso_string).utc
+    # Determine if PDT or PST applies using US DST rules
+    # DST: second Sunday in March to first Sunday in November
+    year = utc.year
+    mar_second_sun = Time.utc(year, 3, 8) + ((7 - Time.utc(year, 3, 8).wday) % 7) * 86400
+    nov_first_sun = Time.utc(year, 11, 1) + ((7 - Time.utc(year, 11, 1).wday) % 7) * 86400
+    # DST transitions at 2:00 AM local = 10:00 AM UTC (PDT start) / 9:00 AM UTC (PST start)
+    pdt_start = mar_second_sun + 10 * 3600
+    pst_start = nov_first_sun + 9 * 3600
+    offset = (utc >= pdt_start && utc < pst_start) ? "-07:00" : "-08:00"
+    t = utc.getlocal(offset)
+    hour = t.hour % 12
+    hour = 12 if hour == 0
+    ampm = t.hour < 12 ? "a" : "p"
+    t.strftime("%b %-d ") + "#{hour}:#{"%02d" % t.min}#{ampm}"
 end
 
 def escape_html(text)
