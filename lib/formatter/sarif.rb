@@ -40,7 +40,7 @@ module Formatter
             {
                 "ruleId" => finding.rule,
                 "level" => sarif_level(finding.severity),
-                "message" => { "text" => "#{finding.message}. Fix: #{finding.fix}" },
+                "message" => { "text" => finding.fix ? "#{finding.message}. Fix: #{finding.fix}" : finding.message },
                 "locations" => [{
                     "physicalLocation" => {
                         "artifactLocation" => {

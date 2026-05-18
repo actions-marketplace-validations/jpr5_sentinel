@@ -215,7 +215,7 @@ def consume_token(token)
 end
 
 def escape_html(text)
-    text.to_s.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;").gsub('"', "&quot;")
+    text.to_s.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;").gsub('"', "&quot;").gsub("'", "&#39;")
 end
 
 def markdown_to_html(markdown)
@@ -322,8 +322,13 @@ def inline_format(text)
     text = text.gsub(/\*\*(.+?)\*\*/, '<strong>\1</strong>')
     # Inline code
     text = text.gsub(/`([^`]+)`/, '<code>\1</code>')
-    # Links
-    text = text.gsub(/\[([^\]]+)\]\(([^)]+)\)/, '<a href="\2">\1</a>')
+    # Links (validate URL scheme to prevent javascript: URLs)
+    text = text.gsub(/\[([^\]]+)\]\(([^)]+)\)/) do
+        link_text = $1
+        url = $2
+        href = url.match?(/\Ahttps?:\/\//) ? url : "#"
+        "<a href=\"#{href}\">#{link_text}</a>"
+    end
     text
 end
 

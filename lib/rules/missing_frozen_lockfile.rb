@@ -117,8 +117,6 @@ module Rules
                     next if chk[:safe] && line.match?(chk[:safe])
                     next if chk[:safe_alt] && line.match?(chk[:safe_alt])
 
-                    # For npm install, also check if the line contains "npm ci" separately
-                    next if chk[:match] == NPM_INSTALL && line.match?(/\bnpm\s+ci\b/)
 
                     findings << finding(workflow,
                         line: i + 1,
