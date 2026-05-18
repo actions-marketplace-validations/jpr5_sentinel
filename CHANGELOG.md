@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.0 (2026-05-18)
+
+### Severity Re-ranking
+- Severities re-evaluated based on actual exploitability
+- Only actively exploitable rules (shell injection, dangerous triggers, hardcoded secrets) are critical
+- Unpinned actions downgraded to medium (requires maintainer compromise first)
+- First-party actions (actions/*) downgraded to low
+
+### Bot Improvements
+- Consolidated PRs: one PR per repo instead of one per rule
+- Rule explainer pages at sentinel-bot.copilotkit.dev/rules/*
+- `--limit N` flag to cap repos scanned per run
+- Skip repos that already use Sentinel
+- Fix PR body includes "How this was detected" methodology disclosure
+- Adopt + opt-out links with UUID tokens
+
+### Infrastructure
+- Bot web handler live at sentinel-bot.copilotkit.dev (Sinatra on Railway)
+- GitHub App created (sentinel-ci-scanner) for future bot identity
+- GHCR-based deploy pipeline with env var trigger for Railway
+- Rule explainer pages served from markdown with dark theme
+
+### Bug Fixes
+- file_exists? returning true for 404s
+- Sentinel skip check matching bare word instead of uses: reference
+- Railway deploy: env var change triggers fresh image pull (serviceInstanceRedeploy doesn't)
+- Sinatra host authorization in production mode
+
+
 ## 1.0.1 (2026-05-17)
 
 - Smart clone auth: try HTTPS, SSH, then gh token — no manual GITHUB_TOKEN needed for private repos
