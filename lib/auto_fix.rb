@@ -103,6 +103,21 @@ module AutoFix
         run_line_idx = find_run_line(lines, target_idx)
         return lines.join unless run_line_idx
 
+        # Bug 4 fix: verify the expression actually appears in the run: block
+        # content, not in a with: block or other YAML value
+        run_block_range_check = find_run_block_range(lines, run_line_idx)
+        run_block_text = run_block_range_check.map { |i| lines[i] }.join
+        # Also include single-line run: content
+        if run_block_range_check.empty? && lines[run_line_idx] =~ /^\s+run:\s+\S/
+            run_block_text = lines[run_line_idx]
+        end
+
+        # Filter to only expressions that actually appear in the run block
+        expressions = expressions.select do |expr|
+            run_block_text.match?(/\$\{\{\s*#{Regexp.escape(expr)}\s*\}\}/)
+        end
+        return lines.join if expressions.empty?
+
         # Determine the step-level indentation (same as run:)
         run_indent = lines[run_line_idx][/^(\s*)/, 1]
 
@@ -123,7 +138,10 @@ module AutoFix
             # Insert new env vars into the existing env: block
             # Find the last entry in the env: block
             insert_idx = find_env_block_end(lines, existing_env_idx, run_indent)
-            env_entry_indent = run_indent + "    "
+
+            # Bug 1 fix: detect actual indent of existing entries instead of
+            # assuming run_indent + 4 spaces
+            env_entry_indent = detect_env_entry_indent(lines, existing_env_idx, run_indent)
 
             new_entries = env_mappings.map { |var, expr| "#{env_entry_indent}#{var}: #{expr}\n" }
             new_entries.reverse.each do |entry|
@@ -137,7 +155,7 @@ module AutoFix
             # Insert env: block as individual lines before the run: line
             env_lines = ["#{run_indent}env:\n"]
             env_mappings.each do |var, expr|
-                env_lines << "#{run_indent}    #{var}: #{expr}\n"
+                env_lines << "#{run_indent}  #{var}: #{expr}\n"
             end
 
             env_lines.reverse.each { |el| lines.insert(run_line_idx, el) }
@@ -153,8 +171,12 @@ module AutoFix
             env_mappings.each do |var, _expr|
                 context = ENV_VAR_NAMES.key(var)
                 next unless context
-                # Replace ${{ context }} with $VAR (for shell context)
+                # Bug 5 fix: detect single-quoted context and switch to double quotes
+                # Bug 3 fix: use lenient whitespace matching
                 replacement = "$#{var}"
+                # Replace single-quoted expressions: '${{ expr }}' -> "$VAR"
+                lines[i] = lines[i].gsub(/'(\$\{\{\s*#{Regexp.escape(context)}\s*\}\})'/) { "\"#{replacement}\"" }
+                # Replace remaining (unquoted or double-quoted) expressions
                 lines[i] = lines[i].gsub(/\$\{\{\s*#{Regexp.escape(context)}\s*\}\}/) { replacement }
             end
         end
@@ -260,6 +282,18 @@ module AutoFix
         run_line_idx = find_run_line(lines, target_idx)
         return lines.join unless run_line_idx
 
+        # Bug 4 fix: verify the expression actually appears in the run: block
+        run_block_range_check = find_run_block_range(lines, run_line_idx)
+        run_block_text = run_block_range_check.map { |i| lines[i] }.join
+        if run_block_range_check.empty? && lines[run_line_idx] =~ /^\s+run:\s+\S/
+            run_block_text = lines[run_line_idx]
+        end
+
+        expressions = expressions.select do |expr|
+            run_block_text.match?(/\$\{\{\s*#{Regexp.escape(expr)}\s*\}\}/)
+        end
+        return lines.join if expressions.empty?
+
         # Determine the step-level indentation (same as run:)
         run_indent = lines[run_line_idx][/^(\s*)/, 1]
 
@@ -284,7 +318,9 @@ module AutoFix
 
         if existing_env_idx
             insert_idx = find_env_block_end(lines, existing_env_idx, run_indent)
-            env_entry_indent = run_indent + "    "
+
+            # Bug 1 fix: detect actual indent of existing entries
+            env_entry_indent = detect_env_entry_indent(lines, existing_env_idx, run_indent)
 
             new_entries = env_mappings.map { |var, expr| "#{env_entry_indent}#{var}: #{expr}\n" }
             new_entries.reverse.each do |entry|
@@ -296,7 +332,7 @@ module AutoFix
         else
             env_lines = ["#{run_indent}env:\n"]
             env_mappings.each do |var, expr|
-                env_lines << "#{run_indent}    #{var}: #{expr}\n"
+                env_lines << "#{run_indent}  #{var}: #{expr}\n"
             end
 
             env_lines.reverse.each { |el| lines.insert(run_line_idx, el) }
@@ -318,6 +354,8 @@ module AutoFix
                         .gsub(/[^A-Z0-9]/, "_")
                     next unless "INPUT_#{test_name}" == var
                     replacement = "$#{var}"
+                    # Bug 5 fix: single-quoted context -> double quotes
+                    lines[i] = lines[i].gsub(/'(\$\{\{\s*#{Regexp.escape(expr)}\s*\}\})'/) { "\"#{replacement}\"" }
                     lines[i] = lines[i].gsub(/\$\{\{\s*#{Regexp.escape(expr)}\s*\}\}/) { replacement }
                 end
             end
@@ -459,7 +497,6 @@ module AutoFix
 
     def self.find_env_block_end(lines, env_idx, run_indent)
         # Find the line after the last entry in the env: block
-        env_entry_indent = run_indent + "    "
         i = env_idx + 1
         while i < lines.length
             line = lines[i]
@@ -468,6 +505,26 @@ module AutoFix
             i += 1
         end
         i
+    end
+
+    def self.detect_env_entry_indent(lines, env_idx, run_indent)
+        # Bug 1 fix: detect the actual indentation of the first existing entry
+        # under env: instead of assuming run_indent + 4 spaces
+        env_indent = lines[env_idx][/^(\s*)/, 1] || ""
+        i = env_idx + 1
+        while i < lines.length
+            line = lines[i]
+            if line.strip.length > 0
+                candidate_indent = line[/^(\s*)/, 1] || ""
+                if candidate_indent.length > env_indent.length
+                    return candidate_indent
+                end
+                break
+            end
+            i += 1
+        end
+        # Fallback: env_indent + 2 spaces (standard YAML indent)
+        env_indent + "  "
     end
 
     def self.find_run_block_range(lines, run_line_idx)
@@ -506,7 +563,7 @@ module AutoFix
 
     private_class_method :extract_uses_string, :find_run_line,
                          :find_step_env_block, :find_env_block_end,
-                         :find_run_block_range
+                         :find_run_block_range, :detect_env_entry_indent
 end
 
 if __FILE__ == $0

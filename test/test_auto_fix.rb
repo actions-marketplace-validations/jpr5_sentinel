@@ -446,4 +446,202 @@ class TestAutoFix < Minitest::Test
         result = AutoFix.apply(finding, yaml)
         assert_includes result, "timeout-minutes: 30"
     end
+
+    # --- Bug fix regression tests ---
+
+    # Bug 1: New env var entry should match existing entry indentation,
+    # not blindly use env_indent + 4 spaces
+    def test_existing_env_block_new_entry_matches_indent
+        yaml = <<~YAML
+          name: CI
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  env:
+                    FOO: bar
+                    BAZ: qux
+                  run: |
+                    echo "${{ github.event.pull_request.title }}"
+        YAML
+        finding = Finding.new(
+            rule: "shell-injection-expr",
+            severity: :critical,
+            file: "ci.yml",
+            line: 12,
+            code: 'echo "${{ github.event.pull_request.title }}"',
+            message: "Shell injection risk",
+            fix: "Move to env block"
+        )
+        result = AutoFix.apply(finding, yaml)
+
+        # Extract indent of FOO and PR_TITLE lines
+        lines = result.lines
+        foo_line = lines.find { |l| l.include?("FOO: bar") }
+        pr_title_line = lines.find { |l| l.include?("PR_TITLE:") }
+        assert foo_line, "FOO: bar should still exist"
+        assert pr_title_line, "PR_TITLE: should be added"
+
+        foo_indent = foo_line[/^(\s*)/, 1]
+        pr_title_indent = pr_title_line[/^(\s*)/, 1]
+        assert_equal foo_indent, pr_title_indent,
+            "New env entry should match existing entry indent (got #{pr_title_indent.length} vs #{foo_indent.length})"
+    end
+
+    # Bug 2: Should merge into existing env: block, not create a duplicate
+    def test_existing_env_block_no_duplicate
+        yaml = <<~YAML
+          name: CI
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  env:
+                    FOO: bar
+                  run: |
+                    echo "${{ github.event.pull_request.title }}"
+        YAML
+        finding = Finding.new(
+            rule: "shell-injection-expr",
+            severity: :critical,
+            file: "ci.yml",
+            line: 11,
+            code: 'echo "${{ github.event.pull_request.title }}"',
+            message: "Shell injection risk",
+            fix: "Move to env block"
+        )
+        result = AutoFix.apply(finding, yaml)
+
+        # Count env: occurrences at the step level (not in env var values)
+        env_block_count = result.lines.count { |l| l =~ /^\s+env:\s*$/ }
+        assert_equal 1, env_block_count,
+            "Should have exactly 1 env: block, not #{env_block_count}"
+
+        # Both FOO and PR_TITLE should be present
+        assert_includes result, "FOO: bar"
+        assert_includes result, "PR_TITLE:"
+    end
+
+    # Bug 3: Expression must actually be replaced in the run: block content
+    def test_expression_replaced_in_run_block
+        yaml = <<~YAML
+          name: CI
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  run: |
+                    echo "${{ github.event.pull_request.title }}"
+                    echo "${{github.event.pull_request.body}}"
+        YAML
+        finding_title = Finding.new(
+            rule: "shell-injection-expr",
+            severity: :critical,
+            file: "ci.yml",
+            line: 9,
+            code: 'echo "${{ github.event.pull_request.title }}"',
+            message: "Shell injection risk",
+            fix: "Move to env block"
+        )
+        result = AutoFix.apply(finding_title, yaml)
+
+        # The run: block should use $PR_TITLE, not the expression
+        run_section = result.split(/^\s+run:\s*\|\s*$/).last
+        assert_includes run_section, "$PR_TITLE"
+        refute_match(/\$\{\{\s*github\.event\.pull_request\.title\s*\}\}/, run_section)
+
+        # Also test with no-space variant
+        finding_body = Finding.new(
+            rule: "shell-injection-expr",
+            severity: :critical,
+            file: "ci.yml",
+            line: 10,
+            code: 'echo "${{github.event.pull_request.body}}"',
+            message: "Shell injection risk",
+            fix: "Move to env block"
+        )
+        result2 = AutoFix.apply(finding_body, yaml)
+        run_section2 = result2.split(/^\s+run:\s*\|\s*$/).last
+        assert_includes run_section2, "$PR_BODY"
+        refute_match(/\$\{\{.*github\.event\.pull_request\.body.*\}\}/, run_section2)
+    end
+
+    # Bug 4: Expression in with: block should NOT trigger shell injection fix
+    def test_expression_in_with_block_not_fixed
+        yaml = <<~YAML
+          name: CI
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Comment
+                  uses: some/action@v1
+                  with:
+                    body: "${{ github.event.pull_request.title }}"
+                - name: Build
+                  run: echo "hello"
+        YAML
+        # Finding points to line 10 (the with: body line), which contains
+        # the expression but is NOT inside a run: block
+        finding = Finding.new(
+            rule: "shell-injection-expr",
+            severity: :critical,
+            file: "ci.yml",
+            line: 10,
+            code: 'body: "${{ github.event.pull_request.title }}"',
+            message: "Shell injection risk",
+            fix: "Move to env block"
+        )
+        result = AutoFix.apply(finding, yaml)
+
+        # The fixer should NOT add an env block to the wrong step
+        # The output should be unchanged since the expression is not in a run: block
+        assert_equal yaml, result,
+            "Expression in with: block should not be modified by shell injection fixer"
+    end
+
+    # Bug 5: Single-quoted expression should use double quotes in replacement
+    def test_single_quoted_expression_uses_double_quotes
+        yaml = <<~YAML
+          name: CI
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  run: |
+                    echo '${{ github.event.pull_request.title }}'
+        YAML
+        finding = Finding.new(
+            rule: "shell-injection-expr",
+            severity: :critical,
+            file: "ci.yml",
+            line: 9,
+            code: "echo '${{ github.event.pull_request.title }}'",
+            message: "Shell injection risk",
+            fix: "Move to env block"
+        )
+        result = AutoFix.apply(finding, yaml)
+
+        # env var should be added
+        assert_includes result, "PR_TITLE:"
+
+        # The run block should NOT have single-quoted $PR_TITLE
+        # (bash doesn't expand vars in single quotes)
+        run_section = result.split(/^\s+run:\s*\|\s*$/).last
+        refute_includes run_section, "'$PR_TITLE'",
+            "Single-quoted $VAR won't expand in bash - should use double quotes"
+
+        # Should have double-quoted replacement
+        assert_includes run_section, '"$PR_TITLE"',
+            "Expression in single quotes should be replaced with double-quoted var"
+    end
 end
