@@ -5,18 +5,20 @@ module Bot
     class State
         def initialize(path = Config::STATE_FILE)
             @path = path
-            @data = if File.exist?(path)
-                JSON.parse(File.read(path))
-            else
-                { "repos" => {}, "prs" => [], "opt_outs" => [] }
-            end
+            @data = with_lock {
+                if File.exist?(path)
+                    JSON.parse(File.read(path))
+                else
+                    { "repos" => {}, "opt_outs" => [] }
+                end
+            }
+            migrate!
         end
 
         def save
             prune
-            tmp = "#{@path}.tmp"
-            File.open(@path, File::CREAT | File::RDWR) do |lock|
-                lock.flock(File::LOCK_EX)
+            with_lock do
+                tmp = "#{@path}.tmp"
                 File.write(tmp, JSON.pretty_generate(@data))
                 File.rename(tmp, @path)
             end
@@ -42,20 +44,61 @@ module Bot
             @data["repos"][repo_name]["status"] ||= "scanned"
         end
 
-        def record_pr(repo_name, pr_url, rule)
+        def record_pr(repo_name, pr_url, rule, number)
             @data["repos"][repo_name] ||= { "scans" => [], "prs" => [] }
             @data["repos"][repo_name]["prs"] << {
                 "url" => pr_url,
+                "number" => number,
                 "rule" => rule,
-                "timestamp" => Time.now.utc.iso8601,
+                "status" => "open",
+                "note" => nil,
+                "created_at" => Time.now.utc.iso8601,
+                "last_updated_at" => Time.now.utc.iso8601,
+                "synced_at" => nil,
             }
+        end
 
-            @data["prs"] << {
-                "repo" => repo_name,
-                "url" => pr_url,
-                "rule" => rule,
-                "timestamp" => Time.now.utc.iso8601,
-            }
+        def update_pr_status(repo_name, number, status, note: nil)
+            repo_data = @data["repos"][repo_name]
+            return unless repo_data
+
+            pr = repo_data["prs"]&.find { |p| p["number"] == number }
+            return unless pr
+
+            pr["status"] = status
+            pr["note"] = note unless note.nil?
+            pr["last_updated_at"] = Time.now.utc.iso8601
+            pr["synced_at"] = Time.now.utc.iso8601
+        end
+
+        def prs_by_status(status)
+            results = []
+            @data["repos"].each do |repo_name, repo_data|
+                (repo_data["prs"] || []).each do |pr|
+                    results << { repo: repo_name, pr: pr } if pr["status"] == status
+                end
+            end
+            results
+        end
+
+        def all_tracked_prs
+            results = []
+            @data["repos"].each do |repo_name, repo_data|
+                (repo_data["prs"] || []).each do |pr|
+                    results << { repo: repo_name, pr: pr }
+                end
+            end
+            results
+        end
+
+        def non_terminal_prs
+            results = []
+            @data["repos"].each do |repo_name, repo_data|
+                (repo_data["prs"] || []).each do |pr|
+                    results << { repo: repo_name, pr: pr } unless pr["status"] == "merged"
+                end
+            end
+            results
         end
 
         def record_opt_out(repo_name)
@@ -91,7 +134,14 @@ module Bot
 
         def prs_opened_today
             today = Time.now.utc.strftime("%Y-%m-%d")
-            @data["prs"].count { |pr| pr["timestamp"]&.start_with?(today) }
+            count = 0
+            @data["repos"].each do |_, repo_data|
+                (repo_data["prs"] || []).each do |pr|
+                    timestamp = pr["created_at"] || pr["timestamp"]
+                    count += 1 if timestamp&.start_with?(today)
+                end
+            end
+            count
         end
 
         def rate_limit_reached?
@@ -99,15 +149,56 @@ module Bot
         end
 
         def summary
+            total_prs = @data["repos"].sum { |_, repo_data| (repo_data["prs"] || []).length }
             {
                 total_repos: @data["repos"].length,
-                total_prs: @data["prs"].length,
+                total_prs: total_prs,
                 prs_today: prs_opened_today,
                 opt_outs: @data["opt_outs"].length,
             }
         end
 
         private
+
+        def with_lock(&block)
+            lockfile = "#{@path}.lock"
+            File.open(lockfile, File::CREAT | File::RDWR) do |f|
+                f.flock(File::LOCK_EX)
+                block.call
+            end
+        end
+
+        def migrate!
+            # Remove top-level prs array (old dual-storage format)
+            @data.delete("prs")
+
+            # Backfill new fields on existing per-repo PR entries
+            @data["repos"].each do |_, repo_data|
+                (repo_data["prs"] || []).each do |pr|
+                    # Extract number from URL if missing
+                    if pr["number"].nil? && pr["url"]
+                        if pr["url"] =~ /\/pull\/(\d+)$/
+                            pr["number"] = $1.to_i
+                        end
+                    end
+
+                    # Backfill status
+                    pr["status"] ||= "open"
+
+                    # Backfill synced_at
+                    pr["synced_at"] = nil unless pr.key?("synced_at")
+
+                    # Backfill created_at from timestamp
+                    pr["created_at"] ||= pr["timestamp"]
+
+                    # Backfill last_updated_at from timestamp
+                    pr["last_updated_at"] ||= pr["timestamp"]
+
+                    # Backfill note
+                    pr["note"] = nil unless pr.key?("note")
+                end
+            end
+        end
 
         def prune(max_age_days: 90)
             cutoff = (Time.now.utc - max_age_days * 86400).iso8601
