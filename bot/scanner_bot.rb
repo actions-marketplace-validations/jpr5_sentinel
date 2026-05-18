@@ -105,6 +105,62 @@ module Bot
             end
         end
 
+        def has_open_sentinel_pr?(repo_name)
+            gh_client = GitHubClient.new(token: @token)
+
+            # Determine fork owner (our authenticated user)
+            user = gh_client.api_get("/user") rescue nil
+            return false unless user && user["login"]
+            fork_owner = user["login"]
+
+            repo_short = repo_name.split("/").last
+
+            # Check if sentinel/security-fixes branch exists on our fork
+            ref = gh_client.api_get("/repos/#{fork_owner}/#{repo_short}/git/ref/heads/sentinel/security-fixes") rescue nil
+            return false unless ref
+
+            # Check if there's an open PR from this branch
+            prs = gh_client.api_get("/repos/#{repo_name}/pulls?head=#{fork_owner}:sentinel/security-fixes&state=open") rescue nil
+            prs.is_a?(Array) && !prs.empty?
+        end
+
+        def check_api_rate_limit
+            gh_client = GitHubClient.new(token: @token)
+            result = gh_client.api_get("/rate_limit") rescue nil
+            return nil unless result
+            result.dig("resources", "core", "remaining")
+        end
+
+        def preflight_check(repo, fixed_files)
+            # 1. Not opted out
+            return false if @state.opted_out?(repo[:full_name])
+
+            # 2. No existing open PR
+            if has_open_sentinel_pr?(repo[:full_name])
+                $stderr.puts "  Open Sentinel PR already exists, skipping"
+                return false
+            end
+
+            # 3. All fixed YAML is valid
+            fixed_files.each do |path, content|
+                begin
+                    YAML.safe_load(content)
+                rescue YAML::SyntaxError => e
+                    $stderr.puts "  YAML validation failed for #{path}: #{e.message}"
+                    return false
+                end
+            end
+
+            # 4. Rate limit has headroom
+            rate = check_api_rate_limit
+            if rate && rate < 500
+                $stderr.puts "  API rate limit too low (#{rate} remaining), skipping"
+                return false
+            end
+
+            true
+        end
+
         def scan_and_fix(repo, pattern)
             $stderr.puts "Scanning #{repo[:full_name]} (#{repo[:stars]} stars)..."
             @summary[:scanned] += 1
@@ -223,6 +279,14 @@ module Bot
                 return
             end
 
+            # Pre-flight validation before creating PR
+            pr_files = fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files
+            unless preflight_check(repo, pr_files)
+                $stderr.puts "  Pre-flight check failed, skipping PR creation"
+                @summary[:skipped] += 1
+                return
+            end
+
             repo_token = pr_token_for(repo[:full_name])
             writer = PrWriter.new(token: repo_token)
             pr = writer.create_pr(
@@ -230,7 +294,7 @@ module Bot
                 branch: branch,
                 title: title,
                 body: body,
-                files: fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files,
+                files: pr_files,
                 signoff: signoff
             )
 
@@ -371,6 +435,13 @@ if __FILE__ == $0
             options[:dry_run] = true
         end
 
+        opts.on("--live", "Enable live mode (creates real PRs). Requires SENTINEL_BOT_LIVE=true env var.") do
+            if ENV["SENTINEL_BOT_LIVE"] != "true"
+                abort("--live requires SENTINEL_BOT_LIVE=true environment variable as safety gate")
+            end
+            options[:dry_run] = false
+        end
+
         opts.on("--limit N", Integer, "Max repos to scan (default: unlimited)") do |n|
             options[:limit] = n
         end
@@ -380,6 +451,12 @@ if __FILE__ == $0
             exit 0
         end
     end.parse!
+
+    # Safety default: live mode without explicit --limit caps at 5
+    if !options[:dry_run] && options[:limit].nil?
+        options[:limit] = 5
+        $stderr.puts "Live mode: defaulting to --limit 5"
+    end
 
     token = ENV["GITHUB_TOKEN"]
     unless token || (ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"])

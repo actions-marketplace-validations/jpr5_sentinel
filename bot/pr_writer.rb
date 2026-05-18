@@ -88,10 +88,11 @@ module Bot
             })
 
             if resp.nil?
-                # Branch might already exist; try to update it
-                resp = api_patch("/repos/#{repo}/git/refs/heads/#{branch}", {
+                # Branch exists — delete it first, then recreate
+                api_delete("/repos/#{repo}/git/refs/heads/#{branch}")
+                resp = api_post("/repos/#{repo}/git/refs", {
+                    ref: "refs/heads/#{branch}",
                     sha: sha,
-                    force: true,
                 })
             end
 
@@ -160,6 +161,13 @@ module Bot
             execute(uri, req)
         end
 
+        def api_delete(path)
+            uri = URI("#{API_BASE}#{path}")
+            req = Net::HTTP::Delete.new(uri)
+            set_headers(req)
+            execute(uri, req)
+        end
+
         def set_headers(req)
             req["Accept"] = "application/vnd.github+json"
             req["Authorization"] = "Bearer #{@token}" if @token
@@ -178,6 +186,8 @@ module Bot
             case resp.code.to_i
             when 200, 201, 202
                 JSON.parse(resp.body)
+            when 204
+                true
             when 404
                 nil
             when 403

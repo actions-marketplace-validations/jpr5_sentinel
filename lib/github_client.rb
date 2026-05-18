@@ -65,8 +65,6 @@ class GitHubClient
         end
     end
 
-    private
-
     def api_get(path)
         uri = URI("#{API_BASE}#{path}")
         req = Net::HTTP::Get.new(uri)
