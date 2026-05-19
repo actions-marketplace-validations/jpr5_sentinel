@@ -12,6 +12,12 @@ module Bot
                     { "repos" => {}, "opt_outs" => [] }
                 end
             }
+
+            # Auto-restore from gist backup if state is empty and backup is configured
+            if @data["repos"].empty? && ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+                auto_restore_from_backup
+            end
+
             migrate!
         end
 
@@ -159,6 +165,23 @@ module Bot
         end
 
         private
+
+        def auto_restore_from_backup
+            require_relative "backup"
+            $stderr.puts "State is empty — restoring from gist backup..."
+            backup = Backup.new(token: ENV["GITHUB_TOKEN"], state_path: @path)
+            with_lock { backup.restore }
+            # Re-read the restored file
+            if File.exist?(@path)
+                restored = JSON.parse(File.read(@path))
+                if restored["repos"] && !restored["repos"].empty?
+                    @data = restored
+                    $stderr.puts "Restored #{@data["repos"].length} repos from backup"
+                end
+            end
+        rescue => e
+            $stderr.puts "Auto-restore failed (non-fatal): #{e.message}"
+        end
 
         def with_lock(&block)
             lockfile = "#{@path}.lock"

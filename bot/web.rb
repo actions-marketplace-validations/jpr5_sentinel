@@ -182,6 +182,11 @@ post "/opt-out" do
     state.record_opt_out(repo)
     state.save
 
+    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+        require_relative "backup"
+        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
+    end
+
     AUDIT.opt_out(repo)
     consume_token(token)
 
@@ -383,6 +388,11 @@ def consume_token(token)
     state = Bot::State.new
     state.consume_token(token)
     state.save
+
+    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+        require_relative "backup"
+        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
+    end
 end
 
 def format_time_pacific(iso_string)
