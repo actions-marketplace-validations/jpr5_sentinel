@@ -22,10 +22,7 @@ module Rules
                 line = workflow.line_content(line_num)
                 next if line.strip.start_with?('#')
                 next unless in_run_block?(workflow, line_num)
-                next if guarded_by_safe_event?(workflow, line_num)
-
-                check_line = strip_inline_comment(line)
-                match = check_line.match(/\$\{\{\s*((?:inputs|github\.event\.inputs)\.[^\s}]+)/)
+                match = line.match(/\$\{\{\s*((?:inputs|github\.event\.inputs)\.[^\s}]+)/)
                 next unless match
 
                 findings << finding(workflow,

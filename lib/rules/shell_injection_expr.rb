@@ -21,7 +21,6 @@ module Rules
                 next unless in_run_block?(workflow, line_num)
                 next if guarded_by_safe_event?(workflow, line_num)
 
-                line = strip_inline_comment(line)
                 match = line.match(PATTERN)
                 next unless match
 

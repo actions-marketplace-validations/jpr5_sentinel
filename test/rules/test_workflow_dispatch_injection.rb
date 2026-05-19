@@ -134,7 +134,7 @@ class TestWorkflowDispatchInjection < Minitest::Test
         assert_empty findings
     end
 
-    def test_no_flag_for_expr_only_in_trailing_comment
+    def test_flags_expr_in_trailing_comment
         yaml = <<~YAML
           on:
             workflow_dispatch:
@@ -151,12 +151,14 @@ class TestWorkflowDispatchInjection < Minitest::Test
         YAML
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
-        assert_empty findings
+        assert_equal 1, findings.length
     end
 
     # --- Guard detection (Step 5.2) ---
 
-    def test_no_flag_with_step_guard_equals_push
+    def test_flags_despite_step_guard_equals_push
+        # Event guards do NOT protect against dispatch input injection —
+        # inputs are always user-controlled regardless of which event fires.
         yaml = <<~YAML
           on:
             workflow_dispatch:
@@ -175,10 +177,12 @@ class TestWorkflowDispatchInjection < Minitest::Test
         YAML
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
-        assert_empty findings
+        assert_equal 1, findings.length
     end
 
-    def test_no_flag_with_job_guard
+    def test_flags_despite_job_guard
+        # Event guards do NOT protect against dispatch input injection —
+        # inputs are always user-controlled regardless of which event fires.
         yaml = <<~YAML
           on:
             workflow_dispatch:
@@ -197,7 +201,7 @@ class TestWorkflowDispatchInjection < Minitest::Test
         YAML
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
-        assert_empty findings
+        assert_equal 1, findings.length
     end
 
     # --- Regression tests: dispatch inputs must still be flagged (Step 5.3) ---

@@ -185,7 +185,7 @@ class TestShellInjectionJq < Minitest::Test
         assert_empty findings
     end
 
-    def test_no_flag_for_expr_only_in_trailing_comment
+    def test_flags_expr_in_trailing_comment
         yaml = <<~YAML
           on: pull_request
           jobs:
@@ -198,7 +198,7 @@ class TestShellInjectionJq < Minitest::Test
         YAML
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
-        assert_empty findings
+        assert_equal 1, findings.length
     end
 
     # --- Step 4.3: Env-block test ---

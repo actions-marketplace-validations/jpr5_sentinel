@@ -27,10 +27,8 @@ module Rules
                 next unless in_run_block?(workflow, line_num)
                 next if guarded_by_safe_event?(workflow, line_num)
 
-                check_line = strip_inline_comment(line)
-
-                if check_line.match?(JQ_PATTERN)
-                    var_match = check_line.match(/\$\{(\w+)\}/)
+                if line.match?(JQ_PATTERN)
+                    var_match = line.match(/\$\{(\w+)\}/)
                     next unless var_match
                     var_name = var_match[1]
                     next unless potentially_attacker_controlled?(var_name)
@@ -43,8 +41,8 @@ module Rules
                     )
                 end
 
-                if check_line.match?(CURL_JSON_PATTERN)
-                    var_match = check_line.match(/\$\{(\w+)\}/)
+                if line.match?(CURL_JSON_PATTERN)
+                    var_match = line.match(/\$\{(\w+)\}/)
                     next unless var_match
                     var_name = var_match[1]
                     next unless potentially_attacker_controlled?(var_name)

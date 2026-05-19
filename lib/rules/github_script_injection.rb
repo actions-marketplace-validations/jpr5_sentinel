@@ -22,8 +22,7 @@ module Rules
                 next unless in_github_script_block?(workflow, line_num)
                 next if guarded_by_safe_event?(workflow, line_num)
 
-                stripped_line = strip_inline_comment(line)
-                match = stripped_line.match(PATTERN)
+                match = line.match(PATTERN)
                 next unless match
 
                 findings << finding(workflow,
