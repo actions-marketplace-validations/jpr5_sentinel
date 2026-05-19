@@ -242,7 +242,9 @@ module Bot
 
         def record_discovered_pr(pr)
             @state.record_pr(pr[:repo], pr[:url], "multiple", pr[:number])
-            @state.update_pr_status(pr[:repo], pr[:number], pr[:status])
+            @state.update_pr_status(pr[:repo], pr[:number], pr[:status],
+                created_at: pr[:created_at],
+                updated_at: pr[:updated_at])
         end
 
         def api_get(path)

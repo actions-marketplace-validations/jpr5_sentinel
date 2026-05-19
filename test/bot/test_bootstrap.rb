@@ -36,12 +36,14 @@ class BootstrapStubState
         @recorded_prs << { repo: repo_name, url: pr_url, rule: rule, number: number }
     end
 
-    def update_pr_status(repo_name, number, status, note: nil)
-        @status_updates << { repo: repo_name, number: number, status: status, note: note }
+    def update_pr_status(repo_name, number, status, note: nil, created_at: nil, updated_at: nil)
+        @status_updates << { repo: repo_name, number: number, status: status, note: note, created_at: created_at, updated_at: updated_at }
         entry = @tracked_prs.find { |e| e[:repo] == repo_name && e[:pr]["number"] == number }
         if entry
             entry[:pr]["status"] = status
             entry[:pr]["note"] = note
+            entry[:pr]["created_at"] = created_at if created_at
+            entry[:pr]["last_updated_at"] = updated_at if updated_at
         end
     end
 end
@@ -591,5 +593,32 @@ class TestBotBootstrap < Minitest::Test
         assert_equal 2, result[:found]
         assert_equal 1, result[:new]
         assert_equal 1, result[:already_tracked]
+    end
+
+    # -------------------------------------------------------
+    # Test 16: Bootstrap passes real GitHub timestamps to state
+    # -------------------------------------------------------
+    def test_passes_real_timestamps_to_state
+        state = BootstrapStubState.new
+
+        pr = search_item(repo: "CopilotKit/CopilotKit", number: 42, state: "open")
+
+        bootstrap = make_bootstrap(state: state) do |path|
+            dp = URI.decode_www_form_component(path)
+            if dp.include?("org:CopilotKit")
+                { "total_count" => 1, "items" => [pr] }
+            elsif dp.include?("org:ag-ui-protocol")
+                { "total_count" => 0, "items" => [] }
+            else
+                nil
+            end
+        end
+
+        bootstrap.run
+
+        assert_equal 1, state.status_updates.length
+        update = state.status_updates.first
+        assert_equal "2026-05-01T00:00:00Z", update[:created_at]
+        assert_equal "2026-05-10T00:00:00Z", update[:updated_at]
     end
 end

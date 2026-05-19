@@ -61,8 +61,11 @@ module Bot
             # Derive status
             status, note = derive_status(owner, name, pr_data)
 
-            # Update state
-            @state.update_pr_status(repo, number, status, note: note)
+            # Update state with real timestamps from GitHub
+            @state.update_pr_status(repo, number, status,
+                note: note,
+                created_at: pr_data["created_at"],
+                updated_at: pr_data["updated_at"])
 
             # Stash note for sync_all reporting (transient, not persisted)
             pr_entry["_sync_note"] = note
