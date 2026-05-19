@@ -934,6 +934,8 @@ end
 
 # Scan trigger page
 get "/scan" do
+    halt 503, "SCAN_TOKEN not configured" unless ENV["SCAN_TOKEN"]
+
     content_type :html
     <<~HTML
     <!DOCTYPE html>
@@ -950,7 +952,7 @@ get "/scan" do
         .nav { font-size: 0.85rem; color: #8888a0; margin-bottom: 2rem; }
         .nav a { color: #8888a0; }
         label { display: block; margin-top: 1rem; color: #8888a0; font-size: 0.9rem; }
-        input[type="number"] {
+        input[type="number"], input[type="password"] {
           display: block; margin-top: 0.3rem; padding: 8px 12px; border-radius: 6px;
           border: 1px solid #2a2a3a; background: #16161f; color: #e8e8f0; font-size: 0.95rem;
           width: 100%; box-sizing: border-box;
@@ -971,13 +973,26 @@ get "/scan" do
       <h1>Start Scan</h1>
       <p>Run a security scan against public repos. Findings go to the
          <a href="/queue">approval queue</a> for review before any PRs are opened.</p>
-      <form method="POST" action="/scan">
+      <form method="POST" action="/scan" id="scan-form">
         <input type="hidden" name="pattern" value="rotate">
+        <label for="token">Access code</label>
+        <input type="password" name="token" id="token" autocomplete="off">
         <label for="limit">Repos to scan (max 500)</label>
         <input type="number" name="limit" id="limit" value="100" min="1" max="500">
         <button type="submit">Start Scan</button>
       </form>
       <p class="note">Rotates through search queries automatically. May take 30-120 seconds.</p>
+      <script>
+        (function() {
+          var f = document.getElementById("scan-form");
+          var t = document.getElementById("token");
+          var saved = sessionStorage.getItem("sentinel_scan_token");
+          if (saved) t.value = saved;
+          f.addEventListener("submit", function() {
+            sessionStorage.setItem("sentinel_scan_token", t.value);
+          });
+        })();
+      </script>
     </body>
     </html>
     HTML
@@ -985,6 +1000,11 @@ end
 
 # Execute scan
 post "/scan" do
+    scan_token = ENV["SCAN_TOKEN"]
+    halt 503, "SCAN_TOKEN not configured" unless scan_token
+    halt 401, "Access code required" unless params["token"] && !params["token"].empty?
+    halt 403, "Invalid access code" unless Rack::Utils.secure_compare(params["token"], scan_token)
+
     token = ENV["GITHUB_TOKEN"]
     halt 500, "GITHUB_TOKEN not configured" unless token
 
