@@ -1,7 +1,9 @@
 name: Scanner Bot
 on:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 16 * * *'   # 8:00 AM PT
+    - cron: '0 0 * * *'    # 4:00 PM PT
+    - cron: '0 8 * * *'    # midnight PT
   workflow_dispatch:
     inputs:
       pattern:
@@ -39,6 +41,6 @@ jobs:
           PATTERN: ${{ inputs.pattern || 'rotate' }}
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
-          args="--queue --limit 10 --pattern $PATTERN"
+          args="--queue --limit 100 --pattern $PATTERN"
           if [ "$DRY_RUN" = "true" ]; then args="$args --dry-run"; fi
           ruby -Ilib -Ibot bot/scanner_bot.rb $args
