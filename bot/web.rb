@@ -6,6 +6,7 @@ require "time"
 require_relative "audit"
 require_relative "config"
 require_relative "github_app_auth"
+require_relative "queue"
 require_relative "state"
 require_relative "pr_writer"
 
@@ -33,6 +34,7 @@ get "/" do
       <p>This bot scans popular open-source repos for CI/CD security vulnerabilities
          and opens fix PRs.</p>
       <p><a href="/dashboard">Dashboard</a> &middot;
+         <a href="/queue">Approval Queue</a> &middot;
          <a href="https://sentinel.copilotkit.dev">Learn more</a> &middot;
          <a href="https://github.com/jpr5/sentinel">Source code</a></p>
     </body>
@@ -488,6 +490,434 @@ end
 get "/og-image.png" do
     content_type "image/png"
     send_file File.join(File.dirname(__FILE__), "assets", "og-image.png")
+end
+
+# Approval queue UI
+
+get "/queue" do
+    queue = Bot::Queue.new
+
+    pending_rows = queue.pending.map do |item|
+        type_badge = item["type"] == "issue" ? '<span class="type-badge type-issue">Issue</span>' : '<span class="type-badge type-pr">PR</span>'
+        finding_count = (item["findings"] || []).length
+        queued = format_time_pacific(item["queued_at"])
+        id_short = item["id"][0, 8]
+
+        <<~ROW
+        <tr>
+          <td>#{type_badge}</td>
+          <td><a href="https://github.com/#{escape_html(item["repo"])}">#{escape_html(item["repo"])}</a></td>
+          <td><a href="/queue/#{escape_html(item["id"])}">#{escape_html(item["title"])}</a></td>
+          <td>#{finding_count}</td>
+          <td>#{escape_html(queued)}</td>
+          <td class="actions">
+            <a href="/queue/#{escape_html(item["id"])}" class="btn btn-view">View</a>
+            <form method="POST" action="/queue/#{escape_html(item["id"])}/approve" style="display:inline">
+              <button type="submit" class="btn btn-approve">Approve</button>
+            </form>
+            <form method="POST" action="/queue/#{escape_html(item["id"])}/reject" style="display:inline">
+              <button type="submit" class="btn btn-reject">Reject</button>
+            </form>
+          </td>
+        </tr>
+        ROW
+    end.join
+
+    approved_rows = queue.approved.map do |item|
+        type_badge = item["type"] == "issue" ? '<span class="type-badge type-issue">Issue</span>' : '<span class="type-badge type-pr">PR</span>'
+        approved_at = format_time_pacific(item["approved_at"])
+        <<~ROW
+        <tr>
+          <td>#{type_badge}</td>
+          <td>#{escape_html(item["repo"])}</td>
+          <td>#{escape_html(item["title"])}</td>
+          <td>#{escape_html(approved_at)}</td>
+        </tr>
+        ROW
+    end.join
+
+    rejected_rows = queue.rejected.map do |item|
+        type_badge = item["type"] == "issue" ? '<span class="type-badge type-issue">Issue</span>' : '<span class="type-badge type-pr">PR</span>'
+        rejected_at = format_time_pacific(item["rejected_at"])
+        reason = item["reason"] ? escape_html(item["reason"]) : "<em>none</em>"
+        <<~ROW
+        <tr>
+          <td>#{type_badge}</td>
+          <td>#{escape_html(item["repo"])}</td>
+          <td>#{escape_html(item["title"])}</td>
+          <td>#{reason}</td>
+          <td>#{escape_html(rejected_at)}</td>
+        </tr>
+        ROW
+    end.join
+
+    flash_msg = params["flash"] ? "<div class=\"flash\">#{escape_html(params["flash"])}</div>" : ""
+
+    content_type :html
+    <<~HTML
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Approval Queue — Sentinel</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <style>
+        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e8e8f0; max-width: 1100px; margin: 50px auto; padding: 0 20px; }
+        h1 { color: #ff4444; }
+        h2 { color: #e8e8f0; margin-top: 2rem; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #2a2a3a; color: #8888a0; font-weight: 500; }
+        td { padding: 8px 12px; border-bottom: 1px solid #1a1a2a; }
+        a { color: #ff4444; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .nav { font-size: 0.85rem; color: #8888a0; margin-bottom: 2rem; }
+        .nav a { color: #8888a0; }
+        .type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; }
+        .type-pr { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .type-issue { background: rgba(234,179,8,0.15); color: #eab308; }
+        .btn { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; border: none; cursor: pointer; text-decoration: none; }
+        .btn-view { background: rgba(136,136,160,0.15); color: #8888a0; }
+        .btn-approve { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .btn-reject { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .btn:hover { opacity: 0.8; }
+        .actions { white-space: nowrap; }
+        .empty { text-align: center; padding: 2rem; color: #8888a0; }
+        .flash { background: rgba(34,197,94,0.15); color: #22c55e; padding: 10px 16px; border-radius: 6px; margin-bottom: 1.5rem; }
+        .summary { margin-top: 1.5rem; color: #8888a0; font-size: 0.9rem; }
+        details { margin-top: 1.5rem; }
+        summary { cursor: pointer; color: #8888a0; font-size: 0.95rem; }
+        summary:hover { color: #e8e8f0; }
+      </style>
+    </head>
+    <body>
+      <div class="nav">
+        <a href="https://sentinel.copilotkit.dev">sentinel</a> / <a href="/dashboard">dashboard</a> / queue
+      </div>
+      <h1>Approval Queue</h1>
+      #{flash_msg}
+      <h2>Pending (#{queue.pending.length})</h2>
+      #{if queue.pending.empty?
+          '<div class="empty">No items pending approval.</div>'
+        else
+          <<~TABLE
+          <table>
+            <thead>
+              <tr><th>Type</th><th>Repo</th><th>Title</th><th>Findings</th><th>Queued</th><th>Actions</th></tr>
+            </thead>
+            <tbody>#{pending_rows}</tbody>
+          </table>
+          TABLE
+        end}
+      <details>
+        <summary>Approved (#{queue.approved.length})</summary>
+        #{if queue.approved.empty?
+            '<div class="empty">No approved items.</div>'
+          else
+            <<~TABLE
+            <table>
+              <thead>
+                <tr><th>Type</th><th>Repo</th><th>Title</th><th>Approved</th></tr>
+              </thead>
+              <tbody>#{approved_rows}</tbody>
+            </table>
+            TABLE
+          end}
+      </details>
+      <details>
+        <summary>Rejected (#{queue.rejected.length})</summary>
+        #{if queue.rejected.empty?
+            '<div class="empty">No rejected items.</div>'
+          else
+            <<~TABLE
+            <table>
+              <thead>
+                <tr><th>Type</th><th>Repo</th><th>Title</th><th>Reason</th><th>Rejected</th></tr>
+              </thead>
+              <tbody>#{rejected_rows}</tbody>
+            </table>
+            TABLE
+          end}
+      </details>
+      <div class="summary">#{queue.pending.length} pending | #{queue.approved.length} approved | #{queue.rejected.length} rejected</div>
+    </body>
+    </html>
+    HTML
+end
+
+get "/queue/:id" do
+    queue = Bot::Queue.new
+
+    # Support prefix match like the CLI
+    item = queue.pending.find { |i| i["id"] == params["id"] || i["id"].start_with?(params["id"]) }
+    halt 404, "Item not found in queue" unless item
+
+    type_badge = item["type"] == "issue" ? '<span class="type-badge type-issue">Issue</span>' : '<span class="type-badge type-pr">PR</span>'
+    finding_count = (item["findings"] || []).length
+    queued = format_time_pacific(item["queued_at"])
+    body_html = markdown_to_html(item["body"] || "")
+
+    files_html = ""
+    if item["files"] && !item["files"].empty?
+        files_html = '<h2>File Changes</h2>'
+        item["files"].each do |file_path, content|
+            files_html += <<~FILE
+            <div class="file-change">
+              <div class="file-header">#{escape_html(file_path)}</div>
+              <pre><code>#{escape_html(content)}</code></pre>
+            </div>
+            FILE
+        end
+    end
+
+    findings_html = ""
+    if item["findings"] && !item["findings"].empty?
+        findings_html = '<h2>Findings</h2>'
+        item["findings"].each do |f|
+            severity = f["severity"] || "unknown"
+            findings_html += <<~FINDING
+            <div class="finding">
+              <div class="finding-header">
+                <span class="finding-rule">#{escape_html(f["rule"] || "")}</span>
+                <span class="finding-severity severity-#{escape_html(severity.to_s)}">#{escape_html(severity.to_s)}</span>
+              </div>
+              <div class="finding-location">#{escape_html(f["file"] || "")}:#{f["line"]}</div>
+              <div class="finding-message">#{escape_html(f["message"] || "")}</div>
+              #{f["fix"] ? "<div class=\"finding-fix\"><strong>Fix:</strong> #{escape_html(f["fix"])}</div>" : ""}
+            </div>
+            FINDING
+        end
+    end
+
+    content_type :html
+    <<~HTML
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>#{escape_html(item["title"])} — Queue — Sentinel</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <style>
+        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e8e8f0; max-width: 900px; margin: 50px auto; padding: 0 20px; line-height: 1.7; }
+        h1 { color: #ff4444; margin-bottom: 0.5rem; }
+        h2 { color: #e8e8f0; margin-top: 2rem; border-bottom: 1px solid #2a2a3a; padding-bottom: 0.5rem; }
+        a { color: #ff4444; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        code { font-family: "JetBrains Mono", monospace; background: #16161f; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+        pre { background: #16161f; border: 1px solid #2a2a3a; border-radius: 8px; padding: 1rem; overflow-x: auto; }
+        pre code { background: none; padding: 0; }
+        .nav { font-size: 0.85rem; color: #8888a0; margin-bottom: 2rem; }
+        .nav a { color: #8888a0; }
+        .type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; }
+        .type-pr { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .type-issue { background: rgba(234,179,8,0.15); color: #eab308; }
+        .meta { color: #8888a0; font-size: 0.9rem; margin-bottom: 1.5rem; }
+        .action-bar { margin: 1.5rem 0; display: flex; gap: 10px; align-items: center; }
+        .btn { display: inline-block; padding: 8px 20px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; border: none; cursor: pointer; text-decoration: none; }
+        .btn-approve { background: rgba(34,197,94,0.25); color: #22c55e; }
+        .btn-reject { background: rgba(239,68,68,0.25); color: #ef4444; }
+        .btn-back { background: rgba(136,136,160,0.15); color: #8888a0; }
+        .btn:hover { opacity: 0.8; }
+        .reject-reason { background: #16161f; border: 1px solid #2a2a3a; color: #e8e8f0; padding: 6px 10px; border-radius: 4px; font-size: 0.85rem; width: 200px; }
+        .body-content { background: #12121a; border: 1px solid #1a1a2a; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; }
+        .body-content p { margin: 0.5rem 0; }
+        .body-content h1, .body-content h2 { color: #e8e8f0; }
+        .body-content ul { padding-left: 1.5rem; }
+        .body-content strong { color: #ff4444; }
+        .file-change { margin: 1rem 0; }
+        .file-header { background: #1a1a2a; padding: 6px 12px; border-radius: 6px 6px 0 0; border: 1px solid #2a2a3a; border-bottom: none; font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #8888a0; }
+        .file-change pre { margin-top: 0; border-radius: 0 0 8px 8px; }
+        .finding { background: #12121a; border: 1px solid #1a1a2a; border-radius: 6px; padding: 1rem; margin: 0.75rem 0; }
+        .finding-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .finding-rule { font-weight: 600; color: #e8e8f0; }
+        .finding-severity { padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; }
+        .severity-critical { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .severity-high { background: rgba(249,115,22,0.15); color: #f97316; }
+        .severity-medium { background: rgba(234,179,8,0.15); color: #eab308; }
+        .severity-low { background: rgba(107,114,128,0.15); color: #6b7280; }
+        .severity-unknown { background: rgba(107,114,128,0.15); color: #6b7280; }
+        .finding-location { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #8888a0; }
+        .finding-message { margin-top: 0.5rem; }
+        .finding-fix { margin-top: 0.5rem; color: #22c55e; font-size: 0.9rem; }
+      </style>
+    </head>
+    <body>
+      <div class="nav">
+        <a href="https://sentinel.copilotkit.dev">sentinel</a> / <a href="/dashboard">dashboard</a> / <a href="/queue">queue</a> / #{escape_html(item["id"][0, 8])}
+      </div>
+      <h1>#{escape_html(item["title"])}</h1>
+      <div class="meta">
+        #{type_badge}
+        &middot; <a href="https://github.com/#{escape_html(item["repo"])}">#{escape_html(item["repo"])}</a>
+        &middot; #{finding_count} finding#{finding_count == 1 ? "" : "s"}
+        &middot; Queued #{escape_html(queued)}
+      </div>
+      <div class="action-bar">
+        <form method="POST" action="/queue/#{escape_html(item["id"])}/approve" style="display:inline">
+          <button type="submit" class="btn btn-approve">Approve</button>
+        </form>
+        <form method="POST" action="/queue/#{escape_html(item["id"])}/reject" style="display:inline;display:flex;gap:6px;align-items:center;">
+          <input type="text" name="reason" placeholder="Rejection reason (optional)" class="reject-reason">
+          <button type="submit" class="btn btn-reject">Reject</button>
+        </form>
+        <a href="/queue" class="btn btn-back">Back to queue</a>
+      </div>
+      <h2>PR/Issue Body</h2>
+      <div class="body-content">
+        #{body_html}
+      </div>
+      #{files_html}
+      #{findings_html}
+      <div class="action-bar">
+        <form method="POST" action="/queue/#{escape_html(item["id"])}/approve" style="display:inline">
+          <button type="submit" class="btn btn-approve">Approve</button>
+        </form>
+        <form method="POST" action="/queue/#{escape_html(item["id"])}/reject" style="display:inline;display:flex;gap:6px;align-items:center;">
+          <input type="text" name="reason" placeholder="Rejection reason (optional)" class="reject-reason">
+          <button type="submit" class="btn btn-reject">Reject</button>
+        </form>
+        <a href="/queue" class="btn btn-back">Back to queue</a>
+      </div>
+    </body>
+    </html>
+    HTML
+end
+
+post "/queue/:id/approve" do
+    queue = Bot::Queue.new
+
+    # Support prefix match like the CLI
+    match = queue.pending.find { |i| i["id"] == params["id"] || i["id"].start_with?(params["id"]) }
+    halt 404, "Item not found in queue" unless match
+
+    token = ENV["GITHUB_TOKEN"]
+    if ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"]
+        auth = Bot::GitHubAppAuth.new
+        token = auth.token_for(match["repo"]) || token
+    end
+    halt 500, "Bot not configured (missing credentials)" unless token
+
+    item = queue.approve(match["id"])
+    queue.save
+
+    AUDIT.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]} type=#{item["type"] || "pr"} via=web")
+
+    writer = Bot::PrWriter.new(token: token)
+    state = Bot::State.new
+
+    if item["type"] == "issue"
+        result = writer.create_issue(
+            repo: item["repo"],
+            title: item["title"],
+            body: item["body"],
+            labels: ["security"]
+        )
+
+        if result
+            AUDIT.issue_created(item["repo"], result["html_url"])
+            (item["findings"] || []).each do |f|
+                state.record_pr(item["repo"], result["html_url"], f["rule"], result["number"], type: "issue")
+            end
+            state.save
+
+            content_type :html
+            <<~HTML
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <title>Issue Created — Sentinel</title>
+              <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+              <style>
+                body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e8e8f0; max-width: 600px; margin: 50px auto; padding: 0 20px; }
+                h1 { color: #22c55e; }
+                a { color: #ff4444; text-decoration: none; }
+                a:hover { text-decoration: underline; }
+                .nav { font-size: 0.85rem; color: #8888a0; margin-bottom: 2rem; }
+                .nav a { color: #8888a0; }
+              </style>
+            </head>
+            <body>
+              <div class="nav">
+                <a href="https://sentinel.copilotkit.dev">sentinel</a> / <a href="/queue">queue</a> / approved
+              </div>
+              <h1>Issue created</h1>
+              <p>An issue has been opened on <strong>#{escape_html(item["repo"])}</strong>.</p>
+              <p><a href="#{escape_html(result["html_url"])}">View issue on GitHub &rarr;</a></p>
+              <p><a href="/queue">Back to queue</a></p>
+            </body>
+            </html>
+            HTML
+        else
+            AUDIT.issue_failed(item["repo"], "create_issue_returned_nil")
+            halt 500, "Failed to create issue for #{escape_html(item["repo"])}"
+        end
+    else
+        result = writer.create_pr(
+            repo: item["repo"],
+            branch: "sentinel/security-fixes",
+            title: item["title"],
+            body: item["body"],
+            files: item["files"] || {},
+            signoff: item["signoff"]
+        )
+
+        if result
+            AUDIT.pr_created(item["repo"], result["html_url"])
+            (item["findings"] || []).each do |f|
+                state.record_pr(item["repo"], result["html_url"], f["rule"], result["number"])
+            end
+            state.save
+
+            content_type :html
+            <<~HTML
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <title>PR Created — Sentinel</title>
+              <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+              <style>
+                body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e8e8f0; max-width: 600px; margin: 50px auto; padding: 0 20px; }
+                h1 { color: #22c55e; }
+                a { color: #ff4444; text-decoration: none; }
+                a:hover { text-decoration: underline; }
+                .nav { font-size: 0.85rem; color: #8888a0; margin-bottom: 2rem; }
+                .nav a { color: #8888a0; }
+              </style>
+            </head>
+            <body>
+              <div class="nav">
+                <a href="https://sentinel.copilotkit.dev">sentinel</a> / <a href="/queue">queue</a> / approved
+              </div>
+              <h1>PR created</h1>
+              <p>A pull request has been opened on <strong>#{escape_html(item["repo"])}</strong>.</p>
+              <p><a href="#{escape_html(result["html_url"])}">View PR on GitHub &rarr;</a></p>
+              <p><a href="/queue">Back to queue</a></p>
+            </body>
+            </html>
+            HTML
+        else
+            AUDIT.pr_failed(item["repo"], "create_pr_returned_nil")
+            halt 500, "Failed to create PR for #{escape_html(item["repo"])}"
+        end
+    end
+end
+
+post "/queue/:id/reject" do
+    queue = Bot::Queue.new
+
+    match = queue.pending.find { |i| i["id"] == params["id"] || i["id"].start_with?(params["id"]) }
+    halt 404, "Item not found in queue" unless match
+
+    reason = params["reason"]&.strip
+    reason = nil if reason&.empty?
+
+    item = queue.reject(match["id"], reason: reason)
+    queue.save
+
+    AUDIT.log("QUEUE_REJECT", repo: item["repo"], details: "id=#{match["id"][0, 8]} reason=#{reason || 'none'} via=web")
+
+    redirect "/queue?flash=Rejected: #{item["repo"]} — #{item["title"]}"
 end
 
 # Token management helpers
