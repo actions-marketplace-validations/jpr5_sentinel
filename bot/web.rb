@@ -329,12 +329,12 @@ post "/adopt" do
         <!DOCTYPE html>
         <html>
         <head>
-      <title>PR Created &mdash; Sentinel</title>
-      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
-      <meta property="og:title" content="Sentinel Bot">
-      <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
-    </head>
+          <title>PR Created &mdash; Sentinel</title>
+          <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+          <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
+          <meta property="og:title" content="Sentinel Bot">
+          <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
+        </head>
         <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 0 20px;">
           <h1>&#x2705; PR created</h1>
           <p>A pull request has been opened to add Sentinel to <strong>#{escape_html(repo)}</strong>.</p>
