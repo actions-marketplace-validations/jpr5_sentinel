@@ -103,10 +103,11 @@ module Rules
         end
 
         # Walk upward from line_num looking for a job-level `if:` guard.
-        # Stop at `jobs:` key or a different job key.
+        # Stop at `jobs:` key or when crossing into a different job.
         def guarded_by_job_if?(workflow, line_num)
-            # Walk upward to find the job key, then check for `if:` right after it
-            job_indent = nil
+            # Track job key boundaries: the first job key we encounter going
+            # upward is the enclosing job; the second means we've left it.
+            job_keys_seen = 0
 
             (line_num - 2).downto(0) do |i|
                 content = workflow.raw_lines[i]
@@ -115,13 +116,24 @@ module Rules
                 # `jobs:` means we've gone too far without finding a job-level if:
                 return false if content.match?(/^jobs:\s*$/)
 
+                # Detect job key lines (e.g. "  build:" at job-key indent)
+                if content.match?(/^\s+\w[\w-]*:\s*$/)
+                    key_indent = content[/^\s*/].length
+                    # Job keys are typically at indent 2 (under `jobs:`)
+                    if key_indent <= 4
+                        job_keys_seen += 1
+                        # Second job key means we've crossed into a different job
+                        return false if job_keys_seen > 1
+                    end
+                end
+
                 # Job-level `if:` — directly under a job key, typically at indent 4 or 6
-                if content.match?(/^\s+if:\s*/) && job_indent.nil?
+                if content.match?(/^\s+if:\s*/)
                     # Check if this is job-level (not step-level) by verifying indent
                     if_indent = content[/^\s*/].length
 
                     # Look further up to see if there's a job key at indent - 2
-                    (i - 1).downto([i - 5, 0].max) do |j|
+                    (i - 1).downto([i - 15, 0].max) do |j|
                         above = workflow.raw_lines[j]
                         next unless above
 
@@ -148,13 +160,11 @@ module Rules
             # Strip ${{ }} wrapper if present
             condition = condition.gsub(/\$\{\{\s*/, '').gsub(/\s*\}\}/, '').strip
 
-            # Pattern: github.event_name != 'pull_request' (or "pull_request")
-            if condition.match?(/github\.event_name\s*!=\s*['"](?:pull_request|pull_request_target)['"]\s*$/)
-                return true
-            end
+            # Reject complex expressions
+            return false if condition.match?(/(\|\||&&|always\s*\(|failure\s*\(|cancelled\s*\()/)
 
-            # Pattern: github.event_name == 'push' (or any SAFE_TRIGGER, single or double quotes)
-            if (m = condition.match(/github\.event_name\s*==\s*['"](\w+)['"]\s*$/))
+            # Pattern: github.event_name == 'push' (or any SAFE_TRIGGER)
+            if (m = condition.match(/\Agithub\.event_name\s*==\s*['"](\w+)['"]\z/))
                 return SAFE_TRIGGERS.include?(m[1])
             end
 

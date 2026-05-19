@@ -276,6 +276,28 @@ class TestGuardPatterns < Minitest::Test
         assert @harness.guarded_by_safe_event?(wf, line_num + 1)
     end
 
+    def test_job_guard_does_not_leak_across_jobs
+        yaml = <<~YAML
+          on:
+            push:
+            pull_request:
+          jobs:
+            safe-job:
+              if: github.event_name == 'push'
+              runs-on: ubuntu-latest
+              steps:
+                - run: echo "safe"
+            unsafe-job:
+              runs-on: ubuntu-latest
+              steps:
+                - run: |
+                    echo "${{ github.event.pull_request.title }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        line_num = wf.raw_lines.index { |l| l.include?("github.event.pull_request.title") }
+        refute @harness.guarded_by_safe_event?(wf, line_num + 1)
+    end
+
     def test_no_job_guard_does_not_match
         yaml = <<~YAML
           on:
@@ -350,5 +372,19 @@ class TestGuardPatterns < Minitest::Test
 
     def test_condition_equals_unsafe_trigger
         refute @harness.safe_guard_condition?("github.event_name == 'issues'")
+    end
+
+    def test_rejects_or_condition_trailing_safe
+        # github.event_name == 'pull_request' || github.event_name == 'push'
+        # should NOT be treated as safe — the OR means it runs on pull_request too
+        refute @harness.safe_guard_condition?("github.event_name == 'pull_request' || github.event_name == 'push'")
+    end
+
+    def test_rejects_always_override
+        refute @harness.safe_guard_condition?("always() && github.event_name == 'push'")
+    end
+
+    def test_rejects_and_condition
+        refute @harness.safe_guard_condition?("github.event_name == 'push' && github.actor == 'bot'")
     end
 end
