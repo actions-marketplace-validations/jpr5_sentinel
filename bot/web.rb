@@ -35,6 +35,7 @@ get "/" do
          and opens fix PRs.</p>
       <p><a href="/dashboard">Dashboard</a> &middot;
          <a href="/queue">Approval Queue</a> &middot;
+         <a href="/scan">Scan</a> &middot;
          <a href="https://sentinel.copilotkit.dev">Learn more</a> &middot;
          <a href="https://github.com/jpr5/sentinel">Source code</a></p>
     </body>
@@ -592,6 +593,7 @@ get "/queue" do
     <body>
       <div class="nav">
         <a href="https://sentinel.copilotkit.dev">sentinel</a> / <a href="/dashboard">dashboard</a> / queue
+        &middot; <a href="/scan">scan</a>
       </div>
       <h1>Approval Queue</h1>
       #{flash_msg}
@@ -799,6 +801,11 @@ post "/queue/:id/approve" do
     item = queue.approve(match["id"])
     queue.save
 
+    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+        require_relative "backup"
+        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
+    end
+
     AUDIT.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]} type=#{item["type"] || "pr"} via=web")
 
     writer = Bot::PrWriter.new(token: token)
@@ -915,9 +922,91 @@ post "/queue/:id/reject" do
     item = queue.reject(match["id"], reason: reason)
     queue.save
 
+    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+        require_relative "backup"
+        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
+    end
+
     AUDIT.log("QUEUE_REJECT", repo: item["repo"], details: "id=#{match["id"][0, 8]} reason=#{reason || 'none'} via=web")
 
     redirect "/queue?flash=Rejected: #{item["repo"]} — #{item["title"]}"
+end
+
+# Scan trigger page
+get "/scan" do
+    patterns = Bot::Config::SEARCH_QUERIES.map { |q| q[:pattern] }
+
+    content_type :html
+    <<~HTML
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Scan — Sentinel</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <style>
+        body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e8e8f0; max-width: 600px; margin: 50px auto; padding: 0 20px; }
+        h1 { color: #ff4444; }
+        a { color: #ff4444; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .nav { font-size: 0.85rem; color: #8888a0; margin-bottom: 2rem; }
+        .nav a { color: #8888a0; }
+        label { display: block; margin-top: 1rem; color: #8888a0; font-size: 0.9rem; }
+        select, input[type="number"] {
+          display: block; margin-top: 0.3rem; padding: 8px 12px; border-radius: 6px;
+          border: 1px solid #2a2a3a; background: #16161f; color: #e8e8f0; font-size: 0.95rem;
+          width: 100%; box-sizing: border-box;
+        }
+        button[type="submit"] {
+          margin-top: 1.5rem; padding: 10px 24px; border-radius: 6px; border: none;
+          background: rgba(255,68,68,0.2); color: #ff4444; font-size: 1rem;
+          font-weight: 500; cursor: pointer;
+        }
+        button[type="submit"]:hover { background: rgba(255,68,68,0.3); }
+        .note { margin-top: 1rem; color: #8888a0; font-size: 0.85rem; }
+      </style>
+    </head>
+    <body>
+      <div class="nav">
+        <a href="https://sentinel.copilotkit.dev">sentinel</a> / scan
+      </div>
+      <h1>Start Scan</h1>
+      <p>Run a security scan against public repos. Findings go to the
+         <a href="/queue">approval queue</a> for review before any PRs are opened.</p>
+      <form method="POST" action="/scan">
+        <label for="pattern">Pattern</label>
+        <select name="pattern" id="pattern">
+          #{patterns.map { |p| "<option value=\"#{escape_html(p)}\">#{escape_html(p)}</option>" }.join("\n          ")}
+        </select>
+        <label for="limit">Limit (repos to scan, 1-50)</label>
+        <input type="number" name="limit" id="limit" value="5" min="1" max="50">
+        <button type="submit">Start Scan</button>
+      </form>
+      <p class="note">The scan runs synchronously and may take 30-120 seconds depending on limit.</p>
+    </body>
+    </html>
+    HTML
+end
+
+# Execute scan
+post "/scan" do
+    token = ENV["GITHUB_TOKEN"]
+    halt 500, "GITHUB_TOKEN not configured" unless token
+
+    pattern = params["pattern"] || "rotate"
+    limit = [[(params["limit"] || "5").to_i, 1].max, 50].min
+
+    require_relative "scanner_bot"
+    bot = Bot::ScannerBot.new(
+        token: token,
+        pattern: pattern,
+        dry_run: false,
+        limit: limit,
+        queue_mode: true
+    )
+    bot.run
+
+    redirect "/queue"
 end
 
 # Token management helpers
