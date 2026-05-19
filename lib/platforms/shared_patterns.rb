@@ -15,6 +15,7 @@ module Platforms
 
         PASSWORD_PATTERN = /password:\s*[^\s${\#]+/i
         SAFE_VALUE_PATTERN = /\$\{\{.*\}\}|\$[A-Z_]+|\$\{[A-Z_]+\}/
+        SAFE_PASSWORDS = %w[postgres password test example changeme admin root dummy placeholder true false].freeze
 
         def scan_for_hardcoded_secrets(lines, filename:, platform_fix:)
             findings = []
@@ -42,6 +43,7 @@ module Platforms
                 if line.match?(PASSWORD_PATTERN)
                     value = line[/password:\s*(.+)/i, 1]&.strip
                     if value && !value.match?(SAFE_VALUE_PATTERN) && !value.start_with?("#")
+                        next if SAFE_PASSWORDS.include?(value.strip.downcase)
                         findings << Finding.new(
                             rule: "hardcoded-secrets",
                             severity: :critical,

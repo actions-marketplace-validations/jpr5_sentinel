@@ -26,8 +26,6 @@ module AutoFix
         "github.event.discussion.body"         => "DISCUSSION_BODY",
         "github.event.workflow_run.head_branch" => "WORKFLOW_HEAD_BRANCH",
         "github.head_ref"                      => "HEAD_REF",
-        "github.actor"                         => "GH_ACTOR",
-        "github.triggering_actor"              => "TRIGGERING_ACTOR",
     }.freeze
 
     # Workflow dispatch input expressions

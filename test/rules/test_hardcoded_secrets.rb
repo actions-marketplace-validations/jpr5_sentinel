@@ -106,4 +106,40 @@ class TestHardcodedSecrets < Minitest::Test
         password_findings = findings.select { |f| f.message.match?(/password/i) }
         assert_empty password_findings
     end
+
+    def test_safe_password_true
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              services:
+                mariadb:
+                  image: mariadb:latest
+                  env:
+                    MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: true
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_empty password_findings
+    end
+
+    def test_safe_password_false
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              services:
+                db:
+                  image: postgres:latest
+                  env:
+                    SOME_PASSWORD: false
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_empty password_findings
+    end
 end
