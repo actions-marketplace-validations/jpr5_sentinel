@@ -128,9 +128,9 @@ module Bot
             entry = @data.dig("tokens", token)
             return false unless entry
             return false unless entry["repo"] == repo && entry["action"] == action
-            # 7-day expiry
+            # 30-day expiry
             created = Time.parse(entry["created_at"]) rescue nil
-            return false if created && (Time.now.utc - created) > 7 * 86400
+            return false if created && (Time.now.utc - created) > 30 * 86400
             true
         end
 
