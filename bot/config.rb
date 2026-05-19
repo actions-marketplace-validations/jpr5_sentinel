@@ -6,11 +6,18 @@ module Bot
         CRITICAL_RULES = %w[shell-injection-expr shell-injection-jq dangerous-triggers github-script-injection hardcoded-secrets].freeze
 
         SEARCH_QUERIES = [
+            # Shell injection vectors
             { pattern: "shell-injection", query: '"${{ github.event.pull_request.title }}" path:.github/workflows language:YAML' },
             { pattern: "shell-injection-body", query: '"${{ github.event.issue.body }}" path:.github/workflows language:YAML' },
             { pattern: "shell-injection-headref", query: '"${{ github.head_ref }}" run path:.github/workflows language:YAML' },
             { pattern: "shell-injection-actor", query: '"${{ github.actor }}" run path:.github/workflows language:YAML' },
+            # Dangerous triggers
             { pattern: "dangerous-triggers", query: 'pull_request_target checkout path:.github/workflows language:YAML' },
+            # Hardcoded secrets
+            { pattern: "hardcoded-secrets", query: '"AKIA" path:.github/workflows language:YAML' },
+            { pattern: "hardcoded-secrets-ghp", query: '"ghp_" path:.github/workflows language:YAML' },
+            # GitHub script injection
+            { pattern: "github-script-injection", query: '"actions/github-script" "github.event" path:.github/workflows language:YAML' },
         ].freeze
 
         OPT_OUT_FILE = ".github/.sentinel-ci.yml"
