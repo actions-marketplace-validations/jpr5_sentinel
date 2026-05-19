@@ -110,4 +110,143 @@ class TestWorkflowDispatchInjection < Minitest::Test
         findings = @rule.check(wf)
         assert_empty findings
     end
+
+    # --- Comment skipping (Step 5.1) ---
+
+    def test_no_flag_for_commented_out_line
+        yaml = <<~YAML
+          on:
+            workflow_dispatch:
+              inputs:
+                name:
+                  description: "Name"
+          jobs:
+            greet:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  run: |
+                    # echo "Hello ${{ inputs.name }}"
+                    echo "safe"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    def test_flags_expr_in_trailing_comment
+        yaml = <<~YAML
+          on:
+            workflow_dispatch:
+              inputs:
+                name:
+                  description: "Name"
+          jobs:
+            greet:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  run: |
+                    echo "safe" # ${{ inputs.name }}
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
+    # --- Guard detection (Step 5.2) ---
+
+    def test_flags_despite_step_guard_equals_push
+        # Event guards do NOT protect against dispatch input injection —
+        # inputs are always user-controlled regardless of which event fires.
+        yaml = <<~YAML
+          on:
+            workflow_dispatch:
+              inputs:
+                name:
+                  description: "Name"
+            push:
+          jobs:
+            greet:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  if: github.event_name == 'push'
+                  run: |
+                    echo "Hello ${{ inputs.name }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
+    def test_flags_despite_job_guard
+        # Event guards do NOT protect against dispatch input injection —
+        # inputs are always user-controlled regardless of which event fires.
+        yaml = <<~YAML
+          on:
+            workflow_dispatch:
+              inputs:
+                name:
+                  description: "Name"
+            push:
+          jobs:
+            greet:
+              if: github.event_name == 'push'
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  run: |
+                    echo "Hello ${{ inputs.name }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
+    # --- Regression tests: dispatch inputs must still be flagged (Step 5.3) ---
+
+    def test_still_flags_workflow_dispatch_only
+        # This is the critical behavior: workflow_dispatch_injection must NOT use
+        # safe_trigger_only? because dispatch inputs are user-controlled.
+        # workflow_dispatch IS in SAFE_TRIGGERS for other rules, but NOT for this one.
+        yaml = <<~YAML
+          on:
+            workflow_dispatch:
+              inputs:
+                name:
+                  description: "Name"
+          jobs:
+            greet:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  run: |
+                    echo "Hello ${{ inputs.name }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
+    def test_still_flags_without_guard
+        yaml = <<~YAML
+          on:
+            workflow_dispatch:
+              inputs:
+                name:
+                  description: "Name"
+            push:
+          jobs:
+            greet:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Greet
+                  run: |
+                    echo "Hello ${{ inputs.name }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
 end
