@@ -23,13 +23,15 @@ class StubState
         @prs
     end
 
-    def update_pr_status(repo_name, number, status, note: nil)
-        @updates << { repo: repo_name, number: number, status: status, note: note }
+    def update_pr_status(repo_name, number, status, note: nil, created_at: nil, updated_at: nil)
+        @updates << { repo: repo_name, number: number, status: status, note: note, created_at: created_at, updated_at: updated_at }
         # Also update the in-memory PR so sync_all sees the change
         entry = @prs.find { |e| e[:repo] == repo_name && e[:pr]["number"] == number }
         if entry
             entry[:pr]["status"] = status
             entry[:pr]["note"] = note
+            entry[:pr]["created_at"] = created_at if created_at
+            entry[:pr]["last_updated_at"] = updated_at if updated_at
         end
     end
 end
@@ -63,12 +65,15 @@ class TestBotSync < Minitest::Test
     end
 
     # Helper: build a standard PR API response
-    def pr_response(number:, state: "open", merged: false, head_sha: "abc123")
+    def pr_response(number:, state: "open", merged: false, head_sha: "abc123",
+                    created_at: "2026-05-01T00:00:00Z", updated_at: "2026-05-10T00:00:00Z")
         {
             "number" => number,
             "state" => state,
             "merged" => merged,
             "head" => { "sha" => head_sha },
+            "created_at" => created_at,
+            "updated_at" => updated_at,
         }
     end
 
@@ -428,5 +433,31 @@ class TestBotSync < Minitest::Test
 
         result = sync.sync_pr("owner/repo", pr)
         assert_equal "open", result
+    end
+
+    # -------------------------------------------------------
+    # Test: sync_pr passes real GitHub timestamps to state
+    # -------------------------------------------------------
+    def test_sync_pr_passes_real_timestamps
+        pr = make_pr(number: 1700)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1700" => pr_response(
+                number: 1700,
+                created_at: "2026-05-01T12:00:00Z",
+                updated_at: "2026-05-15T18:30:00Z",
+            ),
+            "/repos/owner/repo/pulls/1700/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+
+        update = state.updates.first
+        assert_equal "2026-05-01T12:00:00Z", update[:created_at]
+        assert_equal "2026-05-15T18:30:00Z", update[:updated_at]
     end
 end

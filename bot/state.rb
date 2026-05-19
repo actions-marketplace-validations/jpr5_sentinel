@@ -64,7 +64,7 @@ module Bot
             }
         end
 
-        def update_pr_status(repo_name, number, status, note: nil)
+        def update_pr_status(repo_name, number, status, note: nil, created_at: nil, updated_at: nil)
             repo_data = @data["repos"][repo_name]
             return unless repo_data
 
@@ -73,7 +73,8 @@ module Bot
 
             pr["status"] = status
             pr["note"] = note unless note.nil?
-            pr["last_updated_at"] = Time.now.utc.iso8601
+            pr["created_at"] = created_at if created_at
+            pr["last_updated_at"] = updated_at || Time.now.utc.iso8601
             pr["synced_at"] = Time.now.utc.iso8601
         end
 

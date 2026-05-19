@@ -203,6 +203,53 @@ class TestBotState < Minitest::Test
         assert_equal "open", pr["status"], "PR status should not change when updating unknown number"
     end
 
+    def test_update_pr_status_with_real_timestamps
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo", "https://github.com/owner/repo/pull/50", "rule-a", 50)
+
+        state.update_pr_status("owner/repo", 50, "open",
+            created_at: "2026-05-01T12:00:00Z",
+            updated_at: "2026-05-15T18:30:00Z")
+        state.save
+
+        raw = JSON.parse(File.read(@state_file))
+        pr = raw["repos"]["owner/repo"]["prs"].first
+        assert_equal "2026-05-01T12:00:00Z", pr["created_at"]
+        assert_equal "2026-05-15T18:30:00Z", pr["last_updated_at"]
+    end
+
+    def test_update_pr_status_without_timestamps_uses_now
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo", "https://github.com/owner/repo/pull/51", "rule-a", 51)
+
+        before = Time.now.utc.to_i
+        state.update_pr_status("owner/repo", 51, "open")
+        state.save
+
+        raw = JSON.parse(File.read(@state_file))
+        pr = raw["repos"]["owner/repo"]["prs"].first
+        # last_updated_at should be a recent timestamp (within a few seconds of now)
+        updated_at = Time.parse(pr["last_updated_at"]).to_i
+        assert updated_at >= before - 1, "last_updated_at should default to current time when no updated_at passed"
+    end
+
+    def test_update_pr_status_nil_created_at_preserves_original
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo", "https://github.com/owner/repo/pull/52", "rule-a", 52)
+        state.save
+
+        raw = JSON.parse(File.read(@state_file))
+        original_created = raw["repos"]["owner/repo"]["prs"].first["created_at"]
+
+        state.update_pr_status("owner/repo", 52, "merged")
+        state.save
+
+        raw = JSON.parse(File.read(@state_file))
+        pr = raw["repos"]["owner/repo"]["prs"].first
+        assert_equal original_created, pr["created_at"],
+            "created_at should be preserved when not explicitly passed"
+    end
+
     # --- prs_by_status tests ---
 
     def test_prs_by_status_filters_correctly
