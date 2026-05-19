@@ -1,24 +1,36 @@
+require_relative "concerns/guard_patterns"
+
 module Rules
     class WorkflowDispatchInjection < Base
+        include GuardPatterns
+
         def name = "workflow-dispatch-injection"
         def description = "User-controlled workflow_dispatch input in run: block"
         def severity = :high
 
         PATTERN = /\$\{\{\s*(?:inputs\.|github\.event\.inputs\.)/
 
+        # NOTE: This rule intentionally does NOT use safe_trigger_only? because
+        # dispatch inputs are user-controlled. workflow_dispatch IS in SAFE_TRIGGERS
+        # for other rules, but this rule specifically targets ${{ inputs.* }} in
+        # run blocks — those inputs are always attacker-controlled.
+
         def check(workflow)
             findings = []
 
             workflow.lines_of(PATTERN).each do |line_num|
                 line = workflow.line_content(line_num)
+                next if line.strip.start_with?('#')
                 next unless in_run_block?(workflow, line_num)
+                next if guarded_by_safe_event?(workflow, line_num)
 
-                match = line.match(/\$\{\{\s*((?:inputs|github\.event\.inputs)\.[^\s}]+)/)
+                check_line = strip_inline_comment(line)
+                match = check_line.match(/\$\{\{\s*((?:inputs|github\.event\.inputs)\.[^\s}]+)/)
                 next unless match
 
                 findings << finding(workflow,
                     line: line_num,
-                    code: line.strip,
+                    code: workflow.line_content(line_num).strip,
                     message: "User-controlled input ${{ #{match[1]} }} in run: block — shell injection risk",
                     fix: "Move to env: block and reference as $ENV_VAR"
                 )
@@ -40,9 +52,6 @@ module Rules
                 return true if content.match?(/^\s+run:\s*[\|>]?\s*$/) || content.match?(/^\s+run:\s+\S/)
                 return true if content.match?(/^\s+-\s+run:\s*[\|>]?\s*$/) || content.match?(/^\s+-\s+run:\s+\S/)
 
-                # Stop at step-level keys, but only if the target line is at or
-                # shallower than this key's indent (meaning the target is a sibling
-                # or child of this key, not content of a deeper run: block).
                 if content.match?(/^\s+(uses|with|if|id|name|env):/) || content.match?(/^\s+-\s+name:/)
                     line_indent = content[/^\s*/].length
                     return false if target_indent <= line_indent + 2
