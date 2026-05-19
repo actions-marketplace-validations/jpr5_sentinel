@@ -1019,9 +1019,15 @@ post "/scan" do
         limit: limit,
         queue_mode: true
     )
-    bot.run
 
-    redirect "/queue"
+    Thread.new do
+        bot.run
+    rescue => e
+        STDERR.puts "[scan-thread] Error: #{e.class}: #{e.message}"
+        STDERR.puts e.backtrace.first(10).map { |l| "  #{l}" }.join("\n")
+    end
+
+    redirect "/queue?scan=started"
 end
 
 # Token management helpers
