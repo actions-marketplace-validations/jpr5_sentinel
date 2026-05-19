@@ -82,6 +82,11 @@ module Rules
 
                 # Step boundary: a line starting with `- ` at step indent
                 if content.match?(/^\s+-\s+\S/)
+                    # Check if the step boundary itself is `- if:` (guard on dash line)
+                    if content.match?(/^\s+-\s+if:\s*/)
+                        condition = content[/if:\s*(.+)/, 1]&.strip
+                        return safe_guard_condition?(condition) if condition
+                    end
                     step_indent = content[/^\s*/].length
                     break
                 end
