@@ -24,7 +24,8 @@ class TestScanWeb < Minitest::Test
     def test_expected_patterns_present
         patterns = Bot::Config::SEARCH_QUERIES.map { |q| q[:pattern] }
         %w[shell-injection shell-injection-body shell-injection-headref
-           shell-injection-actor dangerous-triggers].each do |expected|
+           shell-injection-actor dangerous-triggers hardcoded-secrets
+           hardcoded-secrets-ghp github-script-injection].each do |expected|
             assert_includes patterns, expected, "Missing pattern: #{expected}"
         end
     end

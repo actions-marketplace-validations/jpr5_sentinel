@@ -934,8 +934,6 @@ end
 
 # Scan trigger page
 get "/scan" do
-    patterns = Bot::Config::SEARCH_QUERIES.map { |q| q[:pattern] }
-
     content_type :html
     <<~HTML
     <!DOCTYPE html>
@@ -952,7 +950,7 @@ get "/scan" do
         .nav { font-size: 0.85rem; color: #8888a0; margin-bottom: 2rem; }
         .nav a { color: #8888a0; }
         label { display: block; margin-top: 1rem; color: #8888a0; font-size: 0.9rem; }
-        select, input[type="number"] {
+        input[type="number"] {
           display: block; margin-top: 0.3rem; padding: 8px 12px; border-radius: 6px;
           border: 1px solid #2a2a3a; background: #16161f; color: #e8e8f0; font-size: 0.95rem;
           width: 100%; box-sizing: border-box;
@@ -974,15 +972,12 @@ get "/scan" do
       <p>Run a security scan against public repos. Findings go to the
          <a href="/queue">approval queue</a> for review before any PRs are opened.</p>
       <form method="POST" action="/scan">
-        <label for="pattern">Pattern</label>
-        <select name="pattern" id="pattern">
-          #{patterns.map { |p| "<option value=\"#{escape_html(p)}\">#{escape_html(p)}</option>" }.join("\n          ")}
-        </select>
-        <label for="limit">Limit (repos to scan, 1-50)</label>
-        <input type="number" name="limit" id="limit" value="5" min="1" max="50">
+        <input type="hidden" name="pattern" value="rotate">
+        <label for="limit">Repos to scan (max 50)</label>
+        <input type="number" name="limit" id="limit" value="10" min="1" max="50">
         <button type="submit">Start Scan</button>
       </form>
-      <p class="note">The scan runs synchronously and may take 30-120 seconds depending on limit.</p>
+      <p class="note">Rotates through search queries automatically. May take 30-120 seconds.</p>
     </body>
     </html>
     HTML
