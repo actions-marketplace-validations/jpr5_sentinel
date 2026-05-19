@@ -275,6 +275,97 @@ class TestShellInjectionExpr < Minitest::Test
         assert_empty findings
     end
 
+    def test_no_flag_with_step_guard_excludes_pull_request
+        yaml = <<~YAML
+          on:
+            push:
+            pull_request:
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Safe
+                  if: github.event_name != 'pull_request'
+                  run: |
+                    echo "${{ github.event.pull_request.title }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    def test_no_flag_with_job_guard_excludes_pull_request
+        yaml = <<~YAML
+          on:
+            push:
+            pull_request:
+          jobs:
+            build:
+              if: github.event_name != 'pull_request'
+              runs-on: ubuntu-latest
+              steps:
+                - name: Run
+                  run: |
+                    echo "${{ github.event.pull_request.title }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    def test_no_flag_expr_only_in_trailing_comment
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Safe
+                  run: |
+                    echo "safe" # ${{ github.event.pull_request.title }}
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    def test_still_flags_expr_before_trailing_comment
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Unsafe
+                  run: |
+                    echo "${{ github.event.pull_request.title }}" # some comment
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
+    def test_adjacent_step_guard_does_not_protect_next_step
+        yaml = <<~YAML
+          on:
+            push:
+            pull_request:
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Guarded
+                  if: github.event_name == 'push'
+                  run: echo "safe"
+                - name: Unguarded
+                  run: |
+                    echo "${{ github.event.pull_request.title }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
     def test_rule_name
         assert_equal "shell-injection-expr", @rule.name
     end

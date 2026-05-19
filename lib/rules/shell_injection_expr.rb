@@ -1,55 +1,33 @@
+require_relative "concerns/guard_patterns"
+
 module Rules
     class ShellInjectionExpr < Base
+        include GuardPatterns
+
         def name = "shell-injection-expr"
         def description = "Attacker-controllable ${{ }} expression in run: block"
         def severity = :critical
-
-        DANGEROUS_CONTEXTS = %w[
-            github.event.pull_request.title
-            github.event.pull_request.body
-            github.event.pull_request.head.ref
-            github.event.pull_request.head.label
-            github.event.issue.title
-            github.event.issue.body
-            github.event.comment.body
-            github.event.review.body
-            github.event.discussion.title
-            github.event.discussion.body
-            github.event.workflow_run.head_branch
-            github.head_ref
-        ].freeze
-
-        SAFE_TRIGGERS = %w[
-            workflow_dispatch schedule push workflow_call release
-            deployment deployment_status create delete
-            page_build watch fork star gollum
-        ].freeze
 
         PATTERN = /\$\{\{\s*(#{DANGEROUS_CONTEXTS.map { |c| Regexp.escape(c) }.join('|')})/
 
         def check(workflow)
             findings = []
 
-            trigger_names = case workflow.triggers
-            when Hash then workflow.triggers.keys.map(&:to_s)
-            when Array then workflow.triggers.map(&:to_s)
-            when String then [workflow.triggers]
-            else []
-            end
-
-            return [] if trigger_names.any? && trigger_names.all? { |t| SAFE_TRIGGERS.include?(t) }
+            return [] if safe_trigger_only?(workflow)
 
             workflow.lines_of(PATTERN).each do |line_num|
                 line = workflow.line_content(line_num)
                 next if line.strip.start_with?('#')
                 next unless in_run_block?(workflow, line_num)
+                next if guarded_by_safe_event?(workflow, line_num)
 
+                line = strip_inline_comment(line)
                 match = line.match(PATTERN)
                 next unless match
 
                 findings << finding(workflow,
                     line: line_num,
-                    code: line.strip,
+                    code: workflow.line_content(line_num).strip,
                     message: "Attacker-controllable expression ${{ #{match[1]} }} in run: block — shell injection risk",
                     fix: "Move to env: block and reference as $ENV_VAR in the shell"
                 )
