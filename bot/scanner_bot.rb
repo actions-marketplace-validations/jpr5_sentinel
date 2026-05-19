@@ -347,7 +347,7 @@ module Bot
                 @audit.issue_created(repo[:full_name], issue["html_url"])
                 $stderr.puts "  Opened issue: #{issue["html_url"]}"
                 advisory_findings.map(&:rule).uniq.each do |rule|
-                    @state.record_pr(repo[:full_name], issue["html_url"], rule, issue["number"])
+                    @state.record_pr(repo[:full_name], issue["html_url"], rule, issue["number"], type: "issue")
                 end
                 @summary[:issues_opened] += 1
             else
@@ -502,8 +502,11 @@ module Bot
 
             state_summary = @state.summary
             $stderr.puts
-            $stderr.puts "  Lifetime: #{state_summary[:total_repos]} repos tracked, " \
-                "#{state_summary[:total_prs]} PRs opened, #{state_summary[:opt_outs]} opt-outs"
+            lifetime = "  Lifetime: #{state_summary[:total_repos]} repos tracked, " \
+                "#{state_summary[:total_prs]} PRs opened"
+            lifetime += ", #{state_summary[:total_issues]} issues opened" if state_summary[:total_issues] > 0
+            lifetime += ", #{state_summary[:opt_outs]} opt-outs"
+            $stderr.puts lifetime
             $stderr.puts "  Today: #{state_summary[:prs_today]}/#{Config::MAX_PRS_PER_DAY} PRs"
         end
     end
@@ -530,26 +533,8 @@ end
 
 STATUS_SORT_ORDER = { "blocked" => 0, "open" => 1, "merged" => 2, "closed" => 3 }.freeze
 
-def print_dashboard(state, excluded: [])
-    prs = state.all_tracked_prs
-
-    if prs.empty?
-        puts "No tracked PRs. Run --bootstrap to seed from GitHub."
-        return
-    end
-
-    # Filter out excluded statuses
-    if excluded.any?
-        prs.reject! { |e| excluded.include?(e[:pr]["status"] || "open") }
-        if prs.empty?
-            puts "No tracked PRs after filtering (excluding: #{excluded.join(", ")})."
-            return
-        end
-    end
-
-    # Sort by status priority (blocked, open, merged, closed),
-    # then by last_updated_at descending within each group
-    prs.sort! { |a, b|
+def sort_entries(entries)
+    entries.sort { |a, b|
         sa = STATUS_SORT_ORDER.fetch(a[:pr]["status"] || "open", 99)
         sb = STATUS_SORT_ORDER.fetch(b[:pr]["status"] || "open", 99)
         if sa != sb
@@ -558,46 +543,110 @@ def print_dashboard(state, excluded: [])
             (b[:pr]["last_updated_at"] || "") <=> (a[:pr]["last_updated_at"] || "")
         end
     }
+end
+
+def status_counts(entries)
+    counts = Hash.new(0)
+    entries.each { |e| counts[e[:pr]["status"] || "open"] += 1 }
+    counts
+end
+
+def format_status_summary(counts)
+    ["blocked", "open", "merged", "closed"]
+        .select { |s| counts[s] > 0 }
+        .map { |s| "#{counts[s]} #{s}" }
+end
+
+def print_section(entries, num_col_header:)
+    return if entries.empty?
+
+    repo_w = [entries.map { |e| e[:repo].length }.max, 4].max
+    num_w = [entries.map { |e| "##{e[:pr]["number"]}".length }.max, num_col_header.length].max
+    status_w = [entries.map { |e| (e[:pr]["status"] || "open").length }.max, 6].max
+    time_w = 16
+
+    header = "%-#{repo_w}s  %-#{num_w}s  %-#{status_w}s  %-#{time_w}s  %-#{time_w}s  %s" %
+        ["REPO", num_col_header, "STATUS", "CREATED", "UPDATED", "NOTE"]
+    puts header
+    puts "─" * [header.length, 80].max
+
+    entries.each do |entry|
+        repo = entry[:repo]
+        pr = entry[:pr]
+        num_str = "##{pr["number"]}"
+        status = pr["status"] || "open"
+        created = format_time_pacific(pr["created_at"])
+        updated = format_time_pacific(pr["last_updated_at"])
+        note = pr["note"] || ""
+
+        line = "%-#{repo_w}s  %-#{num_w}s  %-#{status_w}s  %-#{time_w}s  %-#{time_w}s" %
+            [repo, num_str, status, created, updated]
+        line += "  #{note}" unless note.empty?
+        puts line
+    end
+end
+
+def print_dashboard(state, excluded: [])
+    prs = state.all_tracked_prs
+    issues = state.all_tracked_issues
+
+    if prs.empty? && issues.empty?
+        puts "No tracked PRs or issues. Run --bootstrap to seed from GitHub."
+        return
+    end
+
+    # Filter out excluded statuses
+    if excluded.any?
+        prs.reject! { |e| excluded.include?(e[:pr]["status"] || "open") }
+        issues.reject! { |e| excluded.include?(e[:pr]["status"] || "open") }
+        if prs.empty? && issues.empty?
+            puts "No tracked PRs or issues after filtering (excluding: #{excluded.join(", ")})."
+            return
+        end
+    end
+
+    prs = sort_entries(prs)
+    issues = sort_entries(issues)
 
     header = "Sentinel PR Tracker"
     header += " (excluding: #{excluded.join(", ")})" if excluded.any?
     puts header
     puts
 
-    # Column widths
-    repo_w = [prs.map { |e| e[:repo].length }.max, 4].max
-    pr_w = [prs.map { |e| "##{e[:pr]["number"]}".length }.max, 2].max
-    status_w = [prs.map { |e| (e[:pr]["status"] || "open").length }.max, 6].max
-    time_w = 16
+    # Pull Requests section
+    pr_counts = status_counts(prs)
+    pr_summary = format_status_summary(pr_counts)
+    puts "PULL REQUESTS (#{pr_summary.any? ? pr_summary.join(", ") : "0"})"
+    puts
 
-    header = "%-#{repo_w}s  %-#{pr_w}s  %-#{status_w}s  %-#{time_w}s  %-#{time_w}s  %s" %
-        ["REPO", "PR", "STATUS", "CREATED", "UPDATED", "NOTE"]
-    puts header
-    puts "─" * [header.length, 80].max
-
-    prs.each do |entry|
-        repo = entry[:repo]
-        pr = entry[:pr]
-        pr_num = "##{pr["number"]}"
-        status = pr["status"] || "open"
-        created = format_time_pacific(pr["created_at"])
-        updated = format_time_pacific(pr["last_updated_at"])
-        note = pr["note"] || ""
-
-        line = "%-#{repo_w}s  %-#{pr_w}s  %-#{status_w}s  %-#{time_w}s  %-#{time_w}s" %
-            [repo, pr_num, status, created, updated]
-        line += "  #{note}" unless note.empty?
-        puts line
+    if prs.empty?
+        puts "No tracked PRs."
+    else
+        print_section(prs, num_col_header: "PR")
     end
 
-    # Summary counts
-    counts = Hash.new(0)
-    prs.each { |e| counts[e[:pr]["status"] || "open"] += 1 }
-    summary_parts = ["merged", "open", "blocked", "closed"]
-        .select { |s| counts[s] > 0 }
-        .map { |s| "#{counts[s]} #{s}" }
     puts
-    puts "Summary: #{summary_parts.join(", ")}"
+
+    # Issues section
+    issue_counts = status_counts(issues)
+    issue_summary = format_status_summary(issue_counts)
+    puts "ISSUES (#{issue_summary.any? ? issue_summary.join(", ") : "0"})"
+    puts
+
+    if issues.empty?
+        puts "No tracked issues."
+    else
+        print_section(issues, num_col_header: "#")
+    end
+
+    # Combined summary
+    combined_parts = []
+    pr_parts = format_status_summary(pr_counts)
+    issue_parts = format_status_summary(issue_counts)
+    combined_parts << "PRs: #{pr_parts.any? ? pr_parts.join(", ") : "0"}"
+    combined_parts << "Issues: #{issue_parts.any? ? issue_parts.join(", ") : "0"}"
+    puts
+    puts "Summary: #{combined_parts.join(" | ")}"
 end
 
 # CLI entry point
@@ -737,7 +786,7 @@ if __FILE__ == $0
                 puts "Issue created: #{issue["html_url"]}"
                 state = Bot::State.new
                 item["findings"].each do |f|
-                    state.record_pr(item["repo"], issue["html_url"], f["rule"], issue["number"])
+                    state.record_pr(item["repo"], issue["html_url"], f["rule"], issue["number"], type: "issue")
                 end
                 state.save
             else

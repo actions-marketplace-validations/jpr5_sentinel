@@ -51,9 +51,9 @@ module Bot
             @data["repos"][repo_name]["status"] ||= "scanned"
         end
 
-        def record_pr(repo_name, pr_url, rule, number)
+        def record_pr(repo_name, pr_url, rule, number, type: nil)
             @data["repos"][repo_name] ||= { "scans" => [], "prs" => [] }
-            @data["repos"][repo_name]["prs"] << {
+            entry = {
                 "url" => pr_url,
                 "number" => number,
                 "rule" => rule,
@@ -63,6 +63,8 @@ module Bot
                 "last_updated_at" => Time.now.utc.iso8601,
                 "synced_at" => nil,
             }
+            entry["type"] = type if type
+            @data["repos"][repo_name]["prs"] << entry
         end
 
         def update_pr_status(repo_name, number, status, note: nil, created_at: nil, updated_at: nil)
@@ -80,16 +82,10 @@ module Bot
         end
 
         def prs_by_status(status)
-            results = []
-            @data["repos"].each do |repo_name, repo_data|
-                (repo_data["prs"] || []).each do |pr|
-                    results << { repo: repo_name, pr: pr } if pr["status"] == status
-                end
-            end
-            results
+            all_tracked_entries.select { |e| e[:pr]["status"] == status }
         end
 
-        def all_tracked_prs
+        def all_tracked_entries
             results = []
             @data["repos"].each do |repo_name, repo_data|
                 (repo_data["prs"] || []).each do |pr|
@@ -99,14 +95,16 @@ module Bot
             results
         end
 
+        def all_tracked_prs
+            all_tracked_entries.select { |e| (e[:pr]["type"] || "pr") == "pr" }
+        end
+
+        def all_tracked_issues
+            all_tracked_entries.select { |e| e[:pr]["type"] == "issue" }
+        end
+
         def non_terminal_prs
-            results = []
-            @data["repos"].each do |repo_name, repo_data|
-                (repo_data["prs"] || []).each do |pr|
-                    results << { repo: repo_name, pr: pr } unless pr["status"] == "merged"
-                end
-            end
-            results
+            all_tracked_entries.reject { |e| e[:pr]["status"] == "merged" }
         end
 
         def record_opt_out(repo_name)
@@ -166,10 +164,11 @@ module Bot
         end
 
         def summary
-            total_prs = @data["repos"].sum { |_, repo_data| (repo_data["prs"] || []).length }
+            entries = all_tracked_entries
             {
                 total_repos: @data["repos"].length,
-                total_prs: total_prs,
+                total_prs: entries.count { |e| (e[:pr]["type"] || "pr") == "pr" },
+                total_issues: entries.count { |e| e[:pr]["type"] == "issue" },
                 prs_today: prs_opened_today,
                 opt_outs: @data["opt_outs"].length,
             }

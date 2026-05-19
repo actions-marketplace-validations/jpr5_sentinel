@@ -303,6 +303,90 @@ class TestBotState < Minitest::Test
         assert_equal [], state.all_tracked_prs
     end
 
+    # --- all_tracked_prs excludes issues ---
+
+    def test_all_tracked_prs_excludes_issues
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
+        state.record_pr("owner/repo2", "https://github.com/owner/repo2/issues/2", "rule-b", 2, type: "issue")
+
+        prs = state.all_tracked_prs
+        assert_equal 1, prs.length
+        assert_equal "owner/repo1", prs.first[:repo]
+    end
+
+    def test_all_tracked_prs_treats_nil_type_as_pr
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
+
+        prs = state.all_tracked_prs
+        assert_equal 1, prs.length
+    end
+
+    # --- all_tracked_issues tests ---
+
+    def test_all_tracked_issues_returns_only_issues
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
+        state.record_pr("owner/repo2", "https://github.com/owner/repo2/issues/2", "rule-b", 2, type: "issue")
+
+        issues = state.all_tracked_issues
+        assert_equal 1, issues.length
+        assert_equal "owner/repo2", issues.first[:repo]
+    end
+
+    def test_all_tracked_issues_empty_when_no_issues
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
+
+        assert_equal [], state.all_tracked_issues
+    end
+
+    # --- all_tracked_entries tests ---
+
+    def test_all_tracked_entries_returns_both_prs_and_issues
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
+        state.record_pr("owner/repo2", "https://github.com/owner/repo2/issues/2", "rule-b", 2, type: "issue")
+
+        entries = state.all_tracked_entries
+        assert_equal 2, entries.length
+    end
+
+    # --- record_pr with type tests ---
+
+    def test_record_pr_stores_type_when_provided
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo", "https://github.com/owner/repo/issues/1", "rule-a", 1, type: "issue")
+        state.save
+
+        raw = JSON.parse(File.read(@state_file))
+        pr_entry = raw["repos"]["owner/repo"]["prs"].last
+        assert_equal "issue", pr_entry["type"]
+    end
+
+    def test_record_pr_omits_type_when_not_provided
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo", "https://github.com/owner/repo/pull/1", "rule-a", 1)
+        state.save
+
+        raw = JSON.parse(File.read(@state_file))
+        pr_entry = raw["repos"]["owner/repo"]["prs"].last
+        refute pr_entry.key?("type"), "type should not be set when not provided"
+    end
+
+    # --- summary includes issues ---
+
+    def test_summary_includes_issue_count
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
+        state.record_pr("owner/repo2", "https://github.com/owner/repo2/issues/2", "rule-b", 2, type: "issue")
+
+        summary = state.summary
+        assert_equal 1, summary[:total_prs]
+        assert_equal 1, summary[:total_issues]
+    end
+
     # --- non_terminal_prs tests ---
 
     def test_non_terminal_prs_excludes_merged

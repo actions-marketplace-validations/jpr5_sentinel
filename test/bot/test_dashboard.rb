@@ -90,6 +90,88 @@ class TestDashboard < Minitest::Test
             "Header should show all excluded statuses")
     end
 
+    # --- PR/Issue separation tests ---
+
+    def test_dashboard_shows_pull_requests_section
+        state = build_state_with_prs
+        output = capture_io { print_dashboard(state) }[0]
+
+        assert_match(/PULL REQUESTS/, output,
+            "Dashboard should show PULL REQUESTS section header")
+    end
+
+    def test_dashboard_shows_issues_section
+        state = build_state_with_prs
+        output = capture_io { print_dashboard(state) }[0]
+
+        assert_match(/ISSUES/, output,
+            "Dashboard should show ISSUES section header")
+    end
+
+    def test_dashboard_separates_prs_and_issues
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
+        state.record_pr("owner/repo2", "https://github.com/owner/repo2/issues/2", "rule-b", 2, type: "issue")
+        state.save
+
+        output = capture_io { print_dashboard(state) }[0]
+
+        # PR section should contain repo1 but not repo2
+        pr_section = output.split("ISSUES")[0]
+        assert_match(/owner\/repo1/, pr_section, "PR section should contain PR entries")
+
+        # Issues section should contain repo2
+        issue_section = output.split("ISSUES")[1]
+        assert_match(/owner\/repo2/, issue_section, "Issues section should contain issue entries")
+    end
+
+    def test_dashboard_empty_issues_shows_no_tracked_issues
+        state = build_state_with_prs  # only PRs
+        output = capture_io { print_dashboard(state) }[0]
+
+        assert_match(/No tracked issues/, output,
+            "Should show 'No tracked issues.' when no issues exist")
+    end
+
+    def test_dashboard_empty_prs_shows_no_tracked_prs
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/issues/1", "rule-a", 1, type: "issue")
+        state.save
+
+        output = capture_io { print_dashboard(state) }[0]
+
+        assert_match(/No tracked PRs\./, output,
+            "Should show 'No tracked PRs.' when no PRs exist")
+    end
+
+    def test_dashboard_combined_summary
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
+        state.record_pr("owner/repo2", "https://github.com/owner/repo2/issues/2", "rule-b", 2, type: "issue")
+        state.save
+
+        output = capture_io { print_dashboard(state) }[0]
+
+        assert_match(/PRs:.*1 open/, output, "Summary should show PR counts")
+        assert_match(/Issues:.*1 open/, output, "Summary should show issue counts")
+    end
+
+    def test_dashboard_exclude_applies_to_both_sections
+        state = Bot::State.new(@state_file)
+        state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
+        state.update_pr_status("owner/repo1", 1, "closed")
+        state.record_pr("owner/repo2", "https://github.com/owner/repo2/issues/2", "rule-b", 2, type: "issue")
+        state.update_pr_status("owner/repo2", 2, "closed")
+        state.record_pr("owner/repo3", "https://github.com/owner/repo3/pull/3", "rule-c", 3)
+        state.save
+
+        output = capture_io { print_dashboard(state, excluded: ["closed"]) }[0]
+
+        refute_match(/owner\/repo1/, output, "Closed PR should be excluded")
+        refute_match(/owner\/repo2/, output, "Closed issue should be excluded")
+        assert_match(/owner\/repo3/, output, "Open PR should still show")
+    end
+
     def test_no_exclusion_shows_all
         state = build_state_with_prs
         output = capture_io { print_dashboard(state) }[0]
@@ -116,7 +198,7 @@ class TestDashboard < Minitest::Test
             print_dashboard(state, excluded: ["blocked", "open", "merged", "closed"])
         }[0]
 
-        assert_match(/No tracked PRs after filtering/, output,
+        assert_match(/No tracked PRs or issues after filtering/, output,
             "Should show empty message when all are excluded")
     end
 
@@ -124,7 +206,7 @@ class TestDashboard < Minitest::Test
         state = Bot::State.new(@state_file)
         output = capture_io { print_dashboard(state) }[0]
 
-        assert_match(/No tracked PRs/, output)
+        assert_match(/No tracked PRs or issues/, output)
         assert_match(/--bootstrap/, output)
     end
 

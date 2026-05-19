@@ -544,9 +544,9 @@ class TestScannerBotIntegration < Minitest::Test
         bot_state = bot.instance_variable_get(:@state)
         record_pr_calls = []
         original_record_pr = bot_state.method(:record_pr)
-        bot_state.define_singleton_method(:record_pr) do |repo_name, url, rule, number|
-            record_pr_calls << [repo_name, url, rule, number]
-            original_record_pr.call(repo_name, url, rule, number)
+        bot_state.define_singleton_method(:record_pr) do |repo_name, url, rule, number, type: nil|
+            record_pr_calls << [repo_name, url, rule, number, type]
+            original_record_pr.call(repo_name, url, rule, number, type: type)
         end
 
         _output = capture_io { bot.run }
@@ -558,13 +558,14 @@ class TestScannerBotIntegration < Minitest::Test
             "record_pr should have been called at least once"
 
         record_pr_calls.each do |call_args|
-            assert_equal 4, call_args.length,
-                "record_pr should be called with exactly 4 arguments (repo, url, rule, number)"
-            repo_name, url, rule, number = call_args
+            assert_equal 5, call_args.length,
+                "record_pr should be called with 4 positional args + type keyword"
+            repo_name, url, rule, number, type = call_args
             assert_equal "owner/pr-repo", repo_name
             assert_equal "https://github.com/owner/pr-repo/issues/42", url
             assert_kind_of String, rule, "rule should be a String"
             assert_equal 42, number, "number should be the issue number"
+            assert_equal "issue", type, "type should be 'issue' for advisory issues"
         end
     end
 
