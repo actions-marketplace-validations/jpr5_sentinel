@@ -21,7 +21,13 @@ get "/" do
     <<~HTML
     <!DOCTYPE html>
     <html>
-    <head><title>Sentinel Bot</title></head>
+    <head>
+      <title>Sentinel Bot</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
+      <meta property="og:title" content="Sentinel Bot">
+      <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
+    </head>
     <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 0 20px;">
       <h1>&#x1f6e1;&#xfe0f; Sentinel Bot</h1>
       <p>This bot scans popular open-source repos for CI/CD security vulnerabilities
@@ -112,6 +118,10 @@ get "/dashboard" do
     <head>
       <meta charset="UTF-8">
       <title>Dashboard — Sentinel</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
+      <meta property="og:title" content="Dashboard &mdash; Sentinel Bot">
+      <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
       <style>
         body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0f; color: #e8e8f0; max-width: 1100px; margin: 50px auto; padding: 0 20px; }
         h1 { color: #ff4444; }
@@ -156,7 +166,13 @@ get "/opt-out" do
     <<~HTML
     <!DOCTYPE html>
     <html>
-    <head><title>Opt Out &mdash; Sentinel</title></head>
+    <head>
+      <title>Opt Out &mdash; Sentinel</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
+      <meta property="og:title" content="Sentinel Bot">
+      <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
+    </head>
     <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 0 20px;">
       <h1>&#x1f6e1;&#xfe0f; Opt out of Sentinel</h1>
       <p>This will prevent Sentinel from opening future PRs on <strong>#{escape_html(repo)}</strong>.</p>
@@ -194,7 +210,13 @@ post "/opt-out" do
     <<~HTML
     <!DOCTYPE html>
     <html>
-    <head><title>Opted Out &mdash; Sentinel</title></head>
+    <head>
+      <title>Opted Out &mdash; Sentinel</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
+      <meta property="og:title" content="Sentinel Bot">
+      <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
+    </head>
     <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 0 20px;">
       <h1>&#x2705; Opted out</h1>
       <p><strong>#{escape_html(repo)}</strong> will not receive future PRs from Sentinel.</p>
@@ -217,7 +239,13 @@ get "/adopt" do
     <<~HTML
     <!DOCTYPE html>
     <html>
-    <head><title>Adopt Sentinel &mdash; Sentinel</title></head>
+    <head>
+      <title>Adopt Sentinel &mdash; Sentinel</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
+      <meta property="og:title" content="Sentinel Bot">
+      <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
+    </head>
     <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 0 20px;">
       <h1>&#x1f6e1;&#xfe0f; Adopt Sentinel</h1>
       <p>This will open a PR adding the Sentinel security scanner to <strong>#{escape_html(repo)}</strong>.</p>
@@ -300,7 +328,13 @@ post "/adopt" do
         <<~HTML
         <!DOCTYPE html>
         <html>
-        <head><title>PR Created &mdash; Sentinel</title></head>
+        <head>
+          <title>PR Created &mdash; Sentinel</title>
+          <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+          <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
+          <meta property="og:title" content="Sentinel Bot">
+          <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
+        </head>
         <body style="font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 0 20px;">
           <h1>&#x2705; PR created</h1>
           <p>A pull request has been opened to add Sentinel to <strong>#{escape_html(repo)}</strong>.</p>
@@ -327,6 +361,10 @@ get "/rules" do
     <head>
       <meta charset="UTF-8">
       <title>Rules — Sentinel</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
+      <meta property="og:title" content="Security Rules &mdash; Sentinel">
+      <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
       <style>
         body {
           font-family: -apple-system, system-ui, sans-serif;
@@ -375,6 +413,22 @@ get "/rules/:rule_name" do
 
     content_type :html
     render_markdown_page(rule, markdown_content)
+end
+
+# Static assets
+get "/favicon.ico" do
+    content_type "image/png"
+    send_file File.join(File.dirname(__FILE__), "assets", "favicon.png")
+end
+
+get "/favicon.svg" do
+    content_type "image/svg+xml"
+    send_file File.join(File.dirname(__FILE__), "assets", "favicon.svg")
+end
+
+get "/og-image.png" do
+    content_type "image/png"
+    send_file File.join(File.dirname(__FILE__), "assets", "og-image.png")
 end
 
 # Token management helpers
@@ -541,6 +595,10 @@ def render_markdown_page(rule, markdown)
     <head>
       <meta charset="UTF-8">
       <title>#{escape_html(rule)} — Sentinel</title>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
+      <meta property="og:title" content="#{escape_html(rule)} &mdash; Sentinel">
+      <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
       <style>
         body {
           font-family: -apple-system, system-ui, sans-serif;
