@@ -430,9 +430,9 @@ def format_time_pacific(iso_string)
     t.strftime("%b %-d ") + "#{hour}:#{"%02d" % t.min}#{ampm}"
 end
 
-STATUS_SORT_ORDER = { "blocked" => 0, "open" => 1, "closed" => 2, "merged" => 3 }.freeze
+STATUS_SORT_ORDER = { "blocked" => 0, "open" => 1, "merged" => 2, "closed" => 3 }.freeze
 
-def print_dashboard(state)
+def print_dashboard(state, excluded: [])
     prs = state.all_tracked_prs
 
     if prs.empty?
@@ -440,7 +440,16 @@ def print_dashboard(state)
         return
     end
 
-    # Sort by status priority (blocked, open, closed, merged),
+    # Filter out excluded statuses
+    if excluded.any?
+        prs.reject! { |e| excluded.include?(e[:pr]["status"] || "open") }
+        if prs.empty?
+            puts "No tracked PRs after filtering (excluding: #{excluded.join(", ")})."
+            return
+        end
+    end
+
+    # Sort by status priority (blocked, open, merged, closed),
     # then by last_updated_at descending within each group
     prs.sort! { |a, b|
         sa = STATUS_SORT_ORDER.fetch(a[:pr]["status"] || "open", 99)
@@ -452,7 +461,9 @@ def print_dashboard(state)
         end
     }
 
-    puts "Sentinel PR Tracker"
+    header = "Sentinel PR Tracker"
+    header += " (excluding: #{excluded.join(", ")})" if excluded.any?
+    puts header
     puts
 
     # Column widths
@@ -531,6 +542,11 @@ if __FILE__ == $0
 
         opts.on("--dashboard", "Show PR lifecycle dashboard") do
             options[:dashboard] = true
+        end
+
+        opts.on("--exclude STATUS", "Exclude status from dashboard (repeatable, use 'none' to reset)") do |s|
+            options[:exclude] ||= []
+            options[:exclude] << s
         end
 
         opts.on("--sync", "Sync PR statuses from GitHub") do
@@ -650,7 +666,20 @@ if __FILE__ == $0
 
     if options[:dashboard]
         state = Bot::State.new
-        print_dashboard(state)
+        excluded = if options[:exclude]
+            if options[:exclude].include?("none")
+                state.set_dashboard_excluded_statuses([])
+                state.save
+                []
+            else
+                state.set_dashboard_excluded_statuses(options[:exclude])
+                state.save
+                options[:exclude]
+            end
+        else
+            state.dashboard_excluded_statuses
+        end
+        print_dashboard(state, excluded: excluded)
         exit 0
     end
 

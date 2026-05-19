@@ -207,6 +207,7 @@ module Bot
 
         def with_lock(&block)
             lockfile = "#{@path}.lock"
+            FileUtils.mkdir_p(File.dirname(lockfile))
             File.open(lockfile, File::CREAT | File::RDWR) do |f|
                 f.flock(File::LOCK_EX)
                 block.call

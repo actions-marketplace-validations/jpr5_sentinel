@@ -45,7 +45,19 @@ get "/dashboard" do
     state = Bot::State.new
     prs = state.all_tracked_prs
 
-    status_priority = { "blocked" => 0, "open" => 1, "closed" => 2, "merged" => 3 }
+    # Determine excluded statuses: URL param takes precedence, then persisted preference
+    excluded = if params["exclude"]
+        params["exclude"].split(",").map(&:strip).reject(&:empty?)
+    else
+        state.dashboard_excluded_statuses
+    end
+
+    # Filter out excluded statuses
+    if excluded.any?
+        prs.reject! { |e| excluded.include?(e[:pr]["status"] || "open") }
+    end
+
+    status_priority = { "blocked" => 0, "open" => 1, "merged" => 2, "closed" => 3 }
     prs.sort_by! do |entry|
         [
             status_priority[entry[:pr]["status"]] || 99,
@@ -140,6 +152,7 @@ get "/dashboard" do
         .nav { font-size: 0.85rem; color: #8888a0; margin-bottom: 2rem; }
         .nav a { color: #8888a0; }
         .empty { text-align: center; padding: 3rem; color: #8888a0; }
+        .filter-indicator { color: #eab308; font-size: 0.85rem; margin-bottom: 1rem; }
       </style>
     </head>
     <body>
@@ -147,6 +160,7 @@ get "/dashboard" do
         <a href="https://sentinel.copilotkit.dev">sentinel</a> / dashboard
       </div>
       <h1>PR Tracker</h1>
+      #{excluded.any? ? "<div class=\"filter-indicator\">Excluding: #{escape_html(excluded.join(", "))}</div>" : ""}
       #{table_html}
     </body>
     </html>
