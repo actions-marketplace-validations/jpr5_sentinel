@@ -7,6 +7,8 @@ COPY lib/ /sentinel/lib/
 COPY bot/ /sentinel/bot/
 COPY bin/ /sentinel/bin/
 
+RUN mkdir -p /sentinel/data
+
 WORKDIR /sentinel
 
 # Default: sleep forever. The bot runs via Railway cron trigger, not on container start.
