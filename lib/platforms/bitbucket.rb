@@ -8,7 +8,7 @@ module Platforms
         def initialize(content, filename: "bitbucket-pipelines.yml")
             @content = content
             @filename = filename
-            @data = YAML.safe_load(content, permitted_classes: [Symbol]) || {}
+            @data = YAML.safe_load(content, aliases: true) || {}
             @lines = content.lines
         rescue YAML::SyntaxError
             @data = {}

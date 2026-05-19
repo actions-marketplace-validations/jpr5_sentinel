@@ -178,7 +178,7 @@ module Bot
                 opt_out_content = gh_client.fetch_file_content(repo[:full_name], Config::OPT_OUT_FILE)
                 if opt_out_content
                     begin
-                        opt_out_config = YAML.safe_load(opt_out_content)
+                        opt_out_config = YAML.safe_load(opt_out_content, aliases: true)
                         if opt_out_config.is_a?(Hash) && opt_out_config["enabled"] == false
                             @audit.skip(repo[:full_name], "opt_out_file")
                             $stderr.puts "  Repo has opted out"

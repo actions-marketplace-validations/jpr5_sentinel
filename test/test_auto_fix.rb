@@ -632,7 +632,7 @@ class TestAutoFix < Minitest::Test
         # The result should be different from the original (fix was applied)
         refute_equal yaml, result
         # And the result must parse as valid YAML
-        assert YAML.safe_load(result), "Fixed output should be valid YAML"
+        assert YAML.safe_load(result, aliases: true), "Fixed output should be valid YAML"
     end
 
     def test_invalid_yaml_fix_returns_original
