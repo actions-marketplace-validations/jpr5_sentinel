@@ -44,6 +44,7 @@ end
 get "/dashboard" do
     state = Bot::State.new
     prs = state.all_tracked_prs
+    issues = state.all_tracked_issues
 
     # Determine excluded statuses: URL param takes precedence, then persisted preference
     excluded = if params["exclude"]
@@ -55,73 +56,93 @@ get "/dashboard" do
     # Filter out excluded statuses
     if excluded.any?
         prs.reject! { |e| excluded.include?(e[:pr]["status"] || "open") }
+        issues.reject! { |e| excluded.include?(e[:pr]["status"] || "open") }
     end
 
     status_priority = { "blocked" => 0, "open" => 1, "merged" => 2, "closed" => 3 }
-    prs.sort_by! do |entry|
-        [
-            status_priority[entry[:pr]["status"]] || 99,
-            -(Time.parse(entry[:pr]["last_updated_at"]) rescue Time.at(0)).to_f
-        ]
+    sort_fn = proc do |entries|
+        entries.sort_by! do |entry|
+            [
+                status_priority[entry[:pr]["status"]] || 99,
+                -(Time.parse(entry[:pr]["last_updated_at"]) rescue Time.at(0)).to_f
+            ]
+        end
+    end
+    sort_fn.call(prs)
+    sort_fn.call(issues)
+
+    pr_counts = { "merged" => 0, "open" => 0, "blocked" => 0, "closed" => 0 }
+    prs.each { |e| pr_counts[e[:pr]["status"]] = (pr_counts[e[:pr]["status"]] || 0) + 1 }
+
+    issue_counts = { "merged" => 0, "open" => 0, "blocked" => 0, "closed" => 0 }
+    issues.each { |e| issue_counts[e[:pr]["status"]] = (issue_counts[e[:pr]["status"]] || 0) + 1 }
+
+    build_table = proc do |entries, link_type|
+        if entries.empty?
+            "<div class=\"empty\"><p>No tracked #{link_type == :issue ? "issues" : "PRs"}.</p></div>"
+        else
+            rows = entries.map do |entry|
+                repo = entry[:repo]
+                pr = entry[:pr]
+                number = pr["number"]
+                status = pr["status"] || "open"
+                created = format_time_pacific(pr["created_at"])
+                updated = format_time_pacific(pr["last_updated_at"])
+                note = pr["note"]
+
+                link_path = link_type == :issue ? "issues" : "pull"
+                num_header = link_type == :issue ? "#" : "PR"
+
+                <<~ROW
+                <tr>
+                  <td><a href="https://github.com/#{escape_html(repo)}">#{escape_html(repo)}</a></td>
+                  <td><a href="https://github.com/#{escape_html(repo)}/#{link_path}/#{number}">##{number}</a></td>
+                  <td><span class="status status-#{escape_html(status)}">#{escape_html(status)}</span></td>
+                  <td>#{escape_html(created)}</td>
+                  <td>#{escape_html(updated)}</td>
+                  <td class="note">#{note ? escape_html(note) : ""}</td>
+                </tr>
+                ROW
+            end.join
+
+            num_header = link_type == :issue ? "#" : "PR"
+            <<~TABLE
+            <table>
+              <thead>
+                <tr>
+                  <th>Repo</th>
+                  <th>#{num_header}</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Updated</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                #{rows}
+              </tbody>
+            </table>
+            TABLE
+        end
     end
 
-    counts = { "merged" => 0, "open" => 0, "blocked" => 0, "closed" => 0 }
-    prs.each { |e| counts[e[:pr]["status"]] = (counts[e[:pr]["status"]] || 0) + 1 }
+    pr_table = build_table.call(prs, :pr)
+    issue_table = build_table.call(issues, :issue)
 
-    if prs.empty?
-        table_html = <<~EMPTY
-        <div class="empty">
-          <p>No tracked PRs yet.</p>
-          <p>Run <code>sentinel bot --bootstrap</code> to seed from GitHub.</p>
-        </div>
-        EMPTY
-    else
-        rows = prs.map do |entry|
-            repo = entry[:repo]
-            pr = entry[:pr]
-            number = pr["number"]
-            status = pr["status"] || "open"
-            created = format_time_pacific(pr["created_at"])
-            updated = format_time_pacific(pr["last_updated_at"])
-            note = pr["note"]
+    pr_total = prs.length
+    issue_total = issues.length
 
-            <<~ROW
-            <tr>
-              <td><a href="https://github.com/#{escape_html(repo)}">#{escape_html(repo)}</a></td>
-              <td><a href="https://github.com/#{escape_html(repo)}/pull/#{number}">##{number}</a></td>
-              <td><span class="status status-#{escape_html(status)}">#{escape_html(status)}</span></td>
-              <td>#{escape_html(created)}</td>
-              <td>#{escape_html(updated)}</td>
-              <td class="note">#{note ? escape_html(note) : ""}</td>
-            </tr>
-            ROW
-        end.join
+    # Combined summary line
+    summary_parts = []
+    pr_summary = ["merged", "open", "blocked", "closed"]
+        .select { |s| pr_counts[s] > 0 }
+        .map { |s| "#{pr_counts[s]} #{s}" }
+    summary_parts << "PRs: #{pr_summary.any? ? pr_summary.join(", ") : "0"}"
 
-        summary_parts = []
-        summary_parts << "#{counts["merged"]} merged" if counts["merged"] > 0
-        summary_parts << "#{counts["open"]} open" if counts["open"] > 0
-        summary_parts << "#{counts["blocked"]} blocked" if counts["blocked"] > 0
-        summary_parts << "#{counts["closed"]} closed" if counts["closed"] > 0
-
-        table_html = <<~TABLE
-        <table>
-          <thead>
-            <tr>
-              <th>Repo</th>
-              <th>PR</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Updated</th>
-              <th>Note</th>
-            </tr>
-          </thead>
-          <tbody>
-            #{rows}
-          </tbody>
-        </table>
-        <div class="summary">#{summary_parts.join(", ")}</div>
-        TABLE
-    end
+    issue_summary = ["open", "closed"]
+        .select { |s| issue_counts[s] > 0 }
+        .map { |s| "#{issue_counts[s]} #{s}" }
+    summary_parts << "Issues: #{issue_summary.any? ? issue_summary.join(", ") : "0"}"
 
     content_type :html
     <<~HTML
@@ -153,7 +174,21 @@ get "/dashboard" do
         .nav a { color: #8888a0; }
         .empty { text-align: center; padding: 3rem; color: #8888a0; }
         .filter-indicator { color: #eab308; font-size: 0.85rem; margin-bottom: 1rem; }
+        .tabs { display: flex; gap: 0; margin-bottom: 1.5rem; border-bottom: 2px solid #2a2a3a; }
+        .tab { background: none; border: none; color: #8888a0; padding: 8px 16px; cursor: pointer; font-size: 0.95rem; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+        .tab.active { color: #ff4444; border-bottom-color: #ff4444; }
+        .tab .badge { background: rgba(255,68,68,0.15); color: #ff4444; padding: 1px 6px; border-radius: 10px; font-size: 0.8rem; margin-left: 6px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
       </style>
+      <script>
+        function showTab(name) {
+          document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+          document.querySelectorAll('.tab').forEach(function(el) { el.classList.remove('active'); });
+          document.getElementById(name).classList.add('active');
+          document.querySelector('[onclick*="' + name + '"]').classList.add('active');
+        }
+      </script>
     </head>
     <body>
       <div class="nav">
@@ -161,7 +196,17 @@ get "/dashboard" do
       </div>
       <h1>PR Tracker</h1>
       #{excluded.any? ? "<div class=\"filter-indicator\">Excluding: #{escape_html(excluded.join(", "))}</div>" : ""}
-      #{table_html}
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('prs')">Pull Requests <span class="badge">#{pr_total}</span></button>
+        <button class="tab" onclick="showTab('issues')">Issues <span class="badge">#{issue_total}</span></button>
+      </div>
+      <div id="prs" class="tab-content active">
+        #{pr_table}
+      </div>
+      <div id="issues" class="tab-content">
+        #{issue_table}
+      </div>
+      <div class="summary">#{summary_parts.join(" | ")}</div>
     </body>
     </html>
     HTML

@@ -59,6 +59,12 @@ module Bot
             pr
         end
 
+        def create_issue(repo:, title:, body:, labels: [])
+            payload = { title: title, body: body }
+            payload[:labels] = labels if labels.any?
+            api_post("/repos/#{repo}/issues", payload)
+        end
+
         private
 
         def wait_for_fork(fork_owner, repo_name)

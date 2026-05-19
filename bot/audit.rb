@@ -37,6 +37,14 @@ module Bot
             log("PR_FAILED", repo: repo, details: "reason=#{reason}")
         end
 
+        def issue_created(repo, url)
+            log("ISSUE_CREATED", repo: repo, details: "url=#{url}")
+        end
+
+        def issue_failed(repo, reason)
+            log("ISSUE_FAILED", repo: repo, details: "reason=#{reason}")
+        end
+
         def opt_out(repo)
             log("OPT_OUT", repo: repo)
         end
