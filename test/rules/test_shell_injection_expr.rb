@@ -7,7 +7,7 @@ class TestShellInjectionExpr < Minitest::Test
 
     def test_flags_pr_title_in_run_block
         yaml = <<~YAML
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest
@@ -25,7 +25,7 @@ class TestShellInjectionExpr < Minitest::Test
 
     def test_no_flag_in_env_block
         yaml = <<~YAML
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest
@@ -42,7 +42,7 @@ class TestShellInjectionExpr < Minitest::Test
 
     def test_no_flag_in_with_block
         yaml = <<~YAML
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest
@@ -71,9 +71,9 @@ class TestShellInjectionExpr < Minitest::Test
         assert_empty findings
     end
 
-    def test_flags_github_actor_in_run
+    def test_no_flag_github_actor_in_run
         yaml = <<~YAML
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest
@@ -83,13 +83,12 @@ class TestShellInjectionExpr < Minitest::Test
         YAML
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
-        assert_equal 1, findings.length
-        assert_match(/github\.actor/, findings.first.message)
+        assert_empty findings
     end
 
-    def test_flags_triggering_actor_in_run
+    def test_no_flag_triggering_actor_in_run
         yaml = <<~YAML
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest
@@ -99,13 +98,12 @@ class TestShellInjectionExpr < Minitest::Test
         YAML
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)
-        assert_equal 1, findings.length
-        assert_match(/triggering_actor/, findings.first.message)
+        assert_empty findings
     end
 
     def test_flags_head_ref_in_run
         yaml = <<~YAML
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest
@@ -151,7 +149,7 @@ class TestShellInjectionExpr < Minitest::Test
 
     def test_flags_inline_run_without_name
         yaml = <<~YAML
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest
@@ -165,7 +163,7 @@ class TestShellInjectionExpr < Minitest::Test
 
     def test_flags_expr_in_run_block_after_env_block
         yaml = <<~YAML
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest
@@ -183,7 +181,7 @@ class TestShellInjectionExpr < Minitest::Test
 
     def test_no_flag_expr_inside_env_block_before_run
         yaml = <<~YAML
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest
@@ -192,6 +190,85 @@ class TestShellInjectionExpr < Minitest::Test
                     echo "hello"
                   env:
                     TITLE: ${{ github.event.pull_request.title }}
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    def test_no_flag_for_push_only_trigger
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Show ref
+                  run: echo "${{ github.head_ref }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    def test_no_flag_for_workflow_dispatch_only_trigger
+        yaml = <<~YAML
+          on: workflow_dispatch
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Show ref
+                  run: echo "${{ github.head_ref }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    def test_flags_pull_request_trigger_with_head_ref
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Show ref
+                  run: echo "${{ github.head_ref }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
+    def test_flags_mixed_triggers_with_unsafe
+        yaml = <<~YAML
+          on:
+            push:
+            pull_request:
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Show ref
+                  run: echo "${{ github.head_ref }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+    end
+
+    def test_no_flag_for_commented_out_line
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Show ref
+                  run: |
+                    # echo "${{ github.head_ref }}"
+                    echo "safe"
         YAML
         wf = Workflow.new(filename: "ci.yml", content: yaml)
         findings = @rule.check(wf)

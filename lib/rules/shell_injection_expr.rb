@@ -17,16 +17,31 @@ module Rules
             github.event.discussion.body
             github.event.workflow_run.head_branch
             github.head_ref
-            github.actor
-            github.triggering_actor
+        ].freeze
+
+        SAFE_TRIGGERS = %w[
+            workflow_dispatch schedule push workflow_call release
+            deployment deployment_status create delete
+            page_build watch fork star gollum
         ].freeze
 
         PATTERN = /\$\{\{\s*(#{DANGEROUS_CONTEXTS.map { |c| Regexp.escape(c) }.join('|')})/
 
         def check(workflow)
             findings = []
+
+            trigger_names = case workflow.triggers
+            when Hash then workflow.triggers.keys.map(&:to_s)
+            when Array then workflow.triggers.map(&:to_s)
+            when String then [workflow.triggers]
+            else []
+            end
+
+            return [] if trigger_names.any? && trigger_names.all? { |t| SAFE_TRIGGERS.include?(t) }
+
             workflow.lines_of(PATTERN).each do |line_num|
                 line = workflow.line_content(line_num)
+                next if line.strip.start_with?('#')
                 next unless in_run_block?(workflow, line_num)
 
                 match = line.match(PATTERN)

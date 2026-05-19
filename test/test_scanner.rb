@@ -79,7 +79,7 @@ class TestScanner < Minitest::Test
     def test_scan_severity_filter
         write_workflow("ci.yml", <<~YAML)
           name: CI
-          on: push
+          on: pull_request
           jobs:
             build:
               runs-on: ubuntu-latest

@@ -17,7 +17,7 @@ module Rules
 
         PASSWORD_PATTERN = /password:\s*[^\s${\#]+/i
         SAFE_VALUE_PATTERN = /\$\{\{.*\}\}|\$[A-Z_]+/
-        SAFE_PASSWORDS = %w[postgres password test example changeme admin root dummy placeholder].freeze
+        SAFE_PASSWORDS = %w[postgres password test example changeme admin root dummy placeholder true false].freeze
 
         def check(workflow)
             findings = []
