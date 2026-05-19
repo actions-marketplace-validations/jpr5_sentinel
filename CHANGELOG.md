@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0 (2026-05-18)
+
+### New Features
+- PR lifecycle tracker (state model, GitHub sync, bootstrap, CLI + web dashboards)
+- jq-arg-escape-sequences rule (rule 32, total now 32)
+- Audit trail wiring (12 audit calls across all bot decision points)
+- Gist-based state backup (--backup/--restore, auto-backup after runs)
+
+### Testing & CI
+- Bot integration tests (19 tests covering decision flow)
+- CI workflow (Ruby 3.2+3.3 matrix, self-scan on all PRs)
+- 646 total tests
+
+### Infrastructure
+- Stable file locking for concurrent bot/web access
+- PST/PDT timezone handling (correct year-round)
+
 ## 1.2.0 (2026-05-18)
 
 ### Bot Hardening
