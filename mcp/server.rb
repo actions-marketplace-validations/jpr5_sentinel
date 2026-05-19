@@ -214,7 +214,7 @@ class McpServer
                 patched = AutoFix.apply(finding, content, sha_resolver: sha_resolver)
                 if patched && patched != content
                     begin
-                        YAML.safe_load(patched)
+                        YAML.safe_load(patched, aliases: true)
                         content = patched
                     rescue YAML::SyntaxError => e
                         $stderr.puts "MCP fix: invalid YAML for #{finding.rule} in #{file}, skipping: #{e.message}"

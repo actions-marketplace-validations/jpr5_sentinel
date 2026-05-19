@@ -7,7 +7,7 @@ class Workflow
         @filename = filename
         @raw = content
         @raw_lines = content.lines
-        @data = YAML.safe_load(content) || {}
+        @data = YAML.safe_load(content, aliases: true) || {}
     rescue YAML::SyntaxError => e
         @data = {}
         @parse_error = e.message

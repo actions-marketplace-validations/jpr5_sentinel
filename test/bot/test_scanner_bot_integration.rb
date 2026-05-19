@@ -225,7 +225,7 @@ class TestScannerBotIntegration < Minitest::Test
         result = AutoFix.apply(finding, input, sha_resolver: StubShaResolver.new)
 
         # Result must be valid YAML
-        parsed = YAML.safe_load(result)
+        parsed = YAML.safe_load(result, aliases: true)
         refute_nil parsed, "AutoFix result must be parseable YAML"
 
         # Result must differ from input (a fix was applied)
@@ -596,7 +596,7 @@ class TestScannerBotIntegration < Minitest::Test
 
         # The patched content should be valid YAML
         files.each do |path, content|
-            parsed = YAML.safe_load(content)
+            parsed = YAML.safe_load(content, aliases: true)
             refute_nil parsed, "Patched file #{path} must be parseable YAML"
         end
     end

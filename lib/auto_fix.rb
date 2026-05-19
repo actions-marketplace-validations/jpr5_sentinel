@@ -62,7 +62,7 @@ module AutoFix
         # Validate the result is still valid YAML
         if result && result != raw_content
             begin
-                YAML.safe_load(result)
+                YAML.safe_load(result, aliases: true)
             rescue YAML::SyntaxError => e
                 $stderr.puts "AutoFix: generated invalid YAML for #{finding.rule} in #{finding.file}: #{e.message}"
                 return raw_content  # fail safe — return original

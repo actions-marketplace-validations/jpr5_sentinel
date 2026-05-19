@@ -81,7 +81,7 @@ def apply_fixes(findings, workspace, ai_fix: false, ai_key: nil)
                 result = AutoFix.apply(finding, content, sha_resolver: sha_resolver)
                 if result && result != content
                     begin
-                        YAML.safe_load(result)
+                        YAML.safe_load(result, aliases: true)
                         content = result
                         modified = true
                         puts "  Fixed [#{finding.rule}] in #{file}:#{finding.line} (mechanical)"
@@ -93,7 +93,7 @@ def apply_fixes(findings, workspace, ai_fix: false, ai_key: nil)
                 result = AiFix.apply(finding, content, api_key: ai_key)
                 if result && result != content
                     begin
-                        YAML.safe_load(result)
+                        YAML.safe_load(result, aliases: true)
                         content = result
                         modified = true
                         puts "  Fixed [#{finding.rule}] in #{file}:#{finding.line} (AI)"

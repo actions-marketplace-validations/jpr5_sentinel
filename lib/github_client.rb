@@ -59,7 +59,7 @@ class GitHubClient
         content ||= fetch_file_content(repo, ".github/dependabot.yaml")
         return nil unless content
         begin
-            YAML.safe_load(content)
+            YAML.safe_load(content, aliases: true)
         rescue StandardError => e
             nil
         end

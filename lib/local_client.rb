@@ -25,7 +25,7 @@ class LocalClient
         path = File.join(@path, ".github", "dependabot.yaml") unless File.exist?(path)
         return nil unless File.exist?(path)
         begin
-            YAML.safe_load(File.read(path))
+            YAML.safe_load(File.read(path), aliases: true)
         rescue StandardError => e
             nil
         end
