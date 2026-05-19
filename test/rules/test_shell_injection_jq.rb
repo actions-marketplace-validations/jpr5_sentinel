@@ -249,7 +249,7 @@ class TestShellInjectionJq < Minitest::Test
             pull_request:
           jobs:
             build:
-              if: github.event_name != 'pull_request'
+              if: github.event_name == 'push'
               runs-on: ubuntu-latest
               steps:
                 - name: Build JSON

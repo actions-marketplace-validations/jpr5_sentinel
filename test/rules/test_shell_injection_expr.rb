@@ -285,7 +285,7 @@ class TestShellInjectionExpr < Minitest::Test
               runs-on: ubuntu-latest
               steps:
                 - name: Safe
-                  if: github.event_name != 'pull_request'
+                  if: github.event_name == 'push'
                   run: |
                     echo "${{ github.event.pull_request.title }}"
         YAML
@@ -301,7 +301,7 @@ class TestShellInjectionExpr < Minitest::Test
             pull_request:
           jobs:
             build:
-              if: github.event_name != 'pull_request'
+              if: github.event_name == 'push'
               runs-on: ubuntu-latest
               steps:
                 - name: Run

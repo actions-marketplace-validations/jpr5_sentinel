@@ -109,7 +109,7 @@ class TestGuardPatterns < Minitest::Test
               runs-on: ubuntu-latest
               steps:
                 - name: Safe step
-                  if: github.event_name != 'pull_request'
+                  if: github.event_name == 'push'
                   run: |
                     echo "${{ github.event.pull_request.title }}"
         YAML
@@ -130,7 +130,7 @@ class TestGuardPatterns < Minitest::Test
               runs-on: ubuntu-latest
               steps:
                 - name: Safe step
-                  if: github.event_name != "pull_request"
+                  if: github.event_name == "push"
                   run: |
                     echo "${{ github.event.pull_request.title }}"
         YAML
@@ -149,7 +149,7 @@ class TestGuardPatterns < Minitest::Test
               runs-on: ubuntu-latest
               steps:
                 - name: Safe step
-                  if: ${{ github.event_name != 'pull_request' }}
+                  if: ${{ github.event_name == 'push' }}
                   run: |
                     echo "${{ github.event.pull_request.title }}"
         YAML
@@ -245,7 +245,7 @@ class TestGuardPatterns < Minitest::Test
             pull_request:
           jobs:
             build:
-              if: github.event_name != 'pull_request'
+              if: github.event_name == 'push'
               runs-on: ubuntu-latest
               steps:
                 - name: Run
@@ -326,7 +326,7 @@ class TestGuardPatterns < Minitest::Test
               runs-on: ubuntu-latest
               steps:
                 - name: Safe step
-                  if: github.event_name != 'pull_request_target'
+                  if: github.event_name == 'push'
                   run: |
                     echo "${{ github.event.pull_request.title }}"
         YAML
@@ -338,11 +338,13 @@ class TestGuardPatterns < Minitest::Test
     # --- safe_guard_condition? (unit tests for the private method) ---
 
     def test_safe_condition_not_equal_pull_request
-        assert @harness.safe_guard_condition?("github.event_name != 'pull_request'")
+        # != pattern removed as unsound — cannot be safe without knowing all workflow triggers
+        refute @harness.safe_guard_condition?("github.event_name != 'pull_request'")
     end
 
     def test_safe_condition_not_equal_pull_request_double_quotes
-        assert @harness.safe_guard_condition?('github.event_name != "pull_request"')
+        # != pattern removed as unsound
+        refute @harness.safe_guard_condition?('github.event_name != "pull_request"')
     end
 
     def test_safe_condition_equals_push
@@ -367,7 +369,8 @@ class TestGuardPatterns < Minitest::Test
     end
 
     def test_condition_with_expression_wrapper
-        assert @harness.safe_guard_condition?("${{ github.event_name != 'pull_request' }}")
+        # != pattern removed as unsound; ${{ }} wrapper stripping still works but != no longer matches
+        refute @harness.safe_guard_condition?("${{ github.event_name != 'pull_request' }}")
     end
 
     def test_condition_equals_unsafe_trigger

@@ -93,7 +93,7 @@ class TestGithubScriptInjection < Minitest::Test
             build:
               runs-on: ubuntu-latest
               steps:
-                - if: github.event_name != 'pull_request'
+                - if: github.event_name == 'push'
                   uses: actions/github-script@v7
                   with:
                     script: |
@@ -111,7 +111,7 @@ class TestGithubScriptInjection < Minitest::Test
             pull_request:
           jobs:
             build:
-              if: github.event_name != 'pull_request'
+              if: github.event_name == 'push'
               runs-on: ubuntu-latest
               steps:
                 - uses: actions/github-script@v7
