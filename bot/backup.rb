@@ -2,27 +2,43 @@ require "net/http"
 require "json"
 require "uri"
 require "time"
+require "fileutils"
 
 module Bot
     class Backup
         API_BASE = "https://api.github.com"
-        GIST_FILENAME = "sentinel-state-backup.json"
+        STATE_GIST_FILENAME = "sentinel-state-backup.json"
+        QUEUE_GIST_FILENAME = "sentinel-queue-backup.json"
 
-        def initialize(token:, state_path: Config::STATE_FILE)
+        # Keep old constant for backward compatibility
+        GIST_FILENAME = STATE_GIST_FILENAME
+
+        def initialize(token:, state_path: Config::STATE_FILE, queue_path: nil)
             @token = token
             @state_path = state_path
+            @queue_path = queue_path || File.join(File.dirname(state_path), "queue.json")
             @gist_id = ENV["SENTINEL_BACKUP_GIST_ID"]
         end
 
         def save
-            unless File.exist?(@state_path)
+            files = {}
+
+            if File.exist?(@state_path)
+                files[STATE_GIST_FILENAME] = { "content" => File.read(@state_path) }
+            else
                 $stderr.puts "Backup: state file not found at #{@state_path}"
+            end
+
+            if File.exist?(@queue_path)
+                files[QUEUE_GIST_FILENAME] = { "content" => File.read(@queue_path) }
+            end
+
+            if files.empty?
+                $stderr.puts "Backup: no files to back up"
                 return false
             end
 
-            content = File.read(@state_path)
             description = "Sentinel bot state backup — #{Time.now.utc.iso8601}"
-            files = { GIST_FILENAME => { "content" => content } }
 
             if @gist_id
                 result = api_patch("/gists/#{@gist_id}", {
@@ -44,14 +60,14 @@ module Bot
             end
 
             if result
-                $stderr.puts "Backup: state saved to gist"
+                $stderr.puts "Backup: saved to gist (#{files.keys.join(", ")})"
                 true
             else
-                $stderr.puts "Backup: failed to save state"
+                $stderr.puts "Backup: failed to save"
                 false
             end
         rescue => e
-            $stderr.puts "Backup: error saving state: #{e.message}"
+            $stderr.puts "Backup: error saving: #{e.message}"
             false
         end
 
@@ -67,24 +83,42 @@ module Bot
                 return false
             end
 
-            content = data.dig("files", GIST_FILENAME, "content")
-            unless content
-                $stderr.puts "Backup: gist does not contain #{GIST_FILENAME}"
-                return false
+            restored = []
+
+            state_content = data.dig("files", STATE_GIST_FILENAME, "content")
+            if state_content
+                write_file(@state_path, state_content)
+                restored << "state"
+            else
+                $stderr.puts "Backup: gist does not contain #{STATE_GIST_FILENAME}"
             end
 
-            tmp = "#{@state_path}.tmp"
-            File.write(tmp, content)
-            File.rename(tmp, @state_path)
+            queue_content = data.dig("files", QUEUE_GIST_FILENAME, "content")
+            if queue_content
+                write_file(@queue_path, queue_content)
+                restored << "queue"
+            end
 
-            $stderr.puts "Backup: state restored from gist"
-            true
+            if restored.any?
+                $stderr.puts "Backup: restored #{restored.join(", ")} from gist"
+                true
+            else
+                $stderr.puts "Backup: gist contained no known files"
+                false
+            end
         rescue => e
-            $stderr.puts "Backup: error restoring state: #{e.message}"
+            $stderr.puts "Backup: error restoring: #{e.message}"
             false
         end
 
         private
+
+        def write_file(path, content)
+            FileUtils.mkdir_p(File.dirname(path))
+            tmp = "#{path}.tmp"
+            File.write(tmp, content)
+            File.rename(tmp, path)
+        end
 
         def api_get(path)
             uri = URI("#{API_BASE}#{path}")
