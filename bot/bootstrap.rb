@@ -22,10 +22,19 @@ module Bot
 
             $stderr.puts "Bootstrapping PR tracker..."
 
-            # 1. Search each org for Sentinel PRs via the search API
+            # 1. Global search for all Sentinel bot PRs by author (no org filter)
+            $stderr.puts "  Searching globally for Sentinel PRs..."
+            global_prs = search_global_for_sentinel_prs
+            if global_prs.nil?
+                summary[:errors] += 1
+            else
+                discovered.concat(global_prs)
+            end
+
+            # 2. Search each org for adoption PRs (these have different titles)
             orgs.each do |org|
-                $stderr.puts "  Searching #{org} org..."
-                prs = search_org_for_sentinel_prs(org)
+                $stderr.puts "  Searching #{org} org for adoption PRs..."
+                prs = search_org_for_adoption_prs(org)
                 if prs.nil?
                     summary[:errors] += 1
                 else
@@ -78,33 +87,32 @@ module Bot
         #   2. PRs with "Add Sentinel CI/CD" in the title (the scan-addition pattern)
         # Results are post-filtered in parse_search_result to validate Sentinel origin.
         # Returns nil if all searches fail (API errors), empty array if no results.
-        def search_org_for_sentinel_prs(org)
+        def search_global_for_sentinel_prs
             prs = []
-            any_succeeded = false
+            query = 'is:pr author:jpr5 "Security: Fix" "finding" "GitHub Actions workflows"'
+            results = search_issues(query)
+            return nil unless results
 
-            search_queries = [
-                "is:pr \"Security: Fix\" \"finding\" \"Sentinel\" org:#{org}",
-                "is:pr \"Add Sentinel CI/CD\" org:#{org}",
-            ]
-
-            search_queries.each do |query|
-                results = search_issues(query)
-
-                if results.nil?
-                    next
-                end
-
-                any_succeeded = true
-
-                results.each do |item|
-                    pr = parse_search_result(item)
-                    prs << pr if pr
-                end
-
-                sleep(SEARCH_DELAY)
+            results.each do |item|
+                pr = parse_search_result(item)
+                prs << pr if pr
             end
 
-            any_succeeded ? prs : nil
+            prs
+        end
+
+        def search_org_for_adoption_prs(org)
+            prs = []
+            query = "is:pr \"Add Sentinel CI/CD\" org:#{org}"
+            results = search_issues(query)
+            return nil unless results
+
+            results.each do |item|
+                pr = parse_search_result(item)
+                prs << pr if pr
+            end
+
+            prs
         end
 
         # For repos already in state, check the pulls API directly

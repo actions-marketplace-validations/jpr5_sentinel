@@ -225,8 +225,8 @@ class TestBotBootstrap < Minitest::Test
         result = bootstrap.run
         assert_equal 0, result[:found]
         assert_equal 0, result[:new]
-        # Both org searches should count as errors
-        assert_equal 2, result[:errors]
+        # Global search + both org adoption searches = 3 errors
+        assert_equal 3, result[:errors]
     end
 
     # -------------------------------------------------------
@@ -243,29 +243,25 @@ class TestBotBootstrap < Minitest::Test
             search_item(repo: "CopilotKit/repo101", number: 101, state: "open"),
         ]
 
-        call_count = { copilotkit: 0 }
+        call_count = { global: 0 }
 
         bootstrap = make_bootstrap(state: state) do |path|
             dp = URI.decode_www_form_component(path)
-            if dp.include?("org:CopilotKit")
-                call_count[:copilotkit] += 1
+            if dp.include?("author:jpr5")
+                call_count[:global] += 1
                 if path.include?("page=2")
                     { "total_count" => 101, "items" => page2_items }
                 else
                     { "total_count" => 101, "items" => page1_items }
                 end
-            elsif dp.include?("org:ag-ui-protocol")
-                { "total_count" => 0, "items" => [] }
             else
-                nil
+                { "total_count" => 0, "items" => [] }
             end
         end
 
         result = bootstrap.run
-        # Should have found items — deduped across the two search queries
         assert result[:found] > 0
-        # Pagination should have been triggered (more than 2 calls to CopilotKit search)
-        assert call_count[:copilotkit] > 2, "Should paginate when 100 results returned"
+        assert call_count[:global] >= 2, "Should paginate when 100 results returned"
     end
 
     # -------------------------------------------------------
@@ -463,8 +459,9 @@ class TestBotBootstrap < Minitest::Test
         stderr = output[1]
 
         assert_includes stderr, "Bootstrapping PR tracker..."
-        assert_includes stderr, "Searching CopilotKit org..."
-        assert_includes stderr, "Searching ag-ui-protocol org..."
+        assert_includes stderr, "Searching globally for Sentinel PRs..."
+        assert_includes stderr, "Searching CopilotKit org for adoption PRs..."
+        assert_includes stderr, "Searching ag-ui-protocol org for adoption PRs..."
         assert_includes stderr, "Bootstrap complete:"
     end
 
