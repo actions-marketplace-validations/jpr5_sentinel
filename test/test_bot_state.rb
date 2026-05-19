@@ -771,4 +771,42 @@ class TestBotState < Minitest::Test
         ENV.delete("GITHUB_TOKEN")
         Bot::Backup.define_method(:restore, original_restore) if original_restore rescue nil
     end
+
+    # --- Dashboard excluded statuses ---
+
+    def test_dashboard_excluded_statuses_defaults_to_empty
+        state = Bot::State.new(@state_file)
+        assert_equal [], state.dashboard_excluded_statuses
+    end
+
+    def test_set_dashboard_excluded_statuses_persists
+        state = Bot::State.new(@state_file)
+        state.set_dashboard_excluded_statuses(["closed", "merged"])
+        state.save
+
+        reloaded = Bot::State.new(@state_file)
+        assert_equal ["closed", "merged"], reloaded.dashboard_excluded_statuses
+    end
+
+    def test_set_dashboard_excluded_statuses_to_empty_clears
+        state = Bot::State.new(@state_file)
+        state.set_dashboard_excluded_statuses(["closed"])
+        state.save
+
+        state2 = Bot::State.new(@state_file)
+        state2.set_dashboard_excluded_statuses([])
+        state2.save
+
+        reloaded = Bot::State.new(@state_file)
+        assert_equal [], reloaded.dashboard_excluded_statuses
+    end
+
+    def test_dashboard_excluded_statuses_stored_in_data
+        state = Bot::State.new(@state_file)
+        state.set_dashboard_excluded_statuses(["blocked"])
+        state.save
+
+        raw = JSON.parse(File.read(@state_file))
+        assert_equal ["blocked"], raw.dig("dashboard_preferences", "excluded_statuses")
+    end
 end
