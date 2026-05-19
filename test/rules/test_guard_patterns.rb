@@ -298,6 +298,49 @@ class TestGuardPatterns < Minitest::Test
         refute @harness.guarded_by_safe_event?(wf, line_num + 1)
     end
 
+    def test_job_guard_works_with_permissions_and_steps
+        yaml = <<~YAML
+          on:
+            push:
+            pull_request:
+          jobs:
+            build:
+              if: github.event_name == 'push'
+              permissions:
+                contents: read
+              runs-on: ubuntu-latest
+              steps:
+                - run: |
+                    echo "${{ github.event.pull_request.title }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        line_num = wf.raw_lines.index { |l| l.include?("github.event.pull_request.title") }
+        assert @harness.guarded_by_safe_event?(wf, line_num + 1)
+    end
+
+    def test_job_guard_works_with_strategy_env_and_steps
+        yaml = <<~YAML
+          on:
+            push:
+            pull_request:
+          jobs:
+            build:
+              if: github.event_name == 'push'
+              strategy:
+                matrix:
+                  os: [ubuntu-latest]
+              env:
+                CI: true
+              runs-on: ubuntu-latest
+              steps:
+                - run: |
+                    echo "${{ github.event.pull_request.title }}"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        line_num = wf.raw_lines.index { |l| l.include?("github.event.pull_request.title") }
+        assert @harness.guarded_by_safe_event?(wf, line_num + 1)
+    end
+
     def test_no_job_guard_does_not_match
         yaml = <<~YAML
           on:

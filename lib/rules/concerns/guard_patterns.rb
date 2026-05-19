@@ -6,6 +6,11 @@ module Rules
             page_build watch fork star gollum
         ].freeze
 
+        JOB_PROPERTIES = %w[
+            steps runs-on env strategy permissions outputs concurrency
+            services needs container timeout-minutes if name defaults
+        ].freeze
+
         DANGEROUS_CONTEXTS = %w[
             github.event.pull_request.title
             github.event.pull_request.body
@@ -67,9 +72,6 @@ module Rules
         # Stop at step boundaries: a line matching `^\s*-\s+` at the same or
         # lower indent as the step's dash signals a different step.
         def guarded_by_step_if?(workflow, line_num)
-            # First, find the step boundary (the `- name:` or `- uses:` or `- run:` dash)
-            step_indent = nil
-
             (line_num - 2).downto([line_num - 30, 0].max) do |i|
                 content = workflow.raw_lines[i]
                 next unless content
@@ -87,7 +89,6 @@ module Rules
                         condition = content[/if:\s*(.+)/, 1]&.strip
                         return safe_guard_condition?(condition) if condition
                     end
-                    step_indent = content[/^\s*/].length
                     break
                 end
 
@@ -108,6 +109,7 @@ module Rules
             # Track job key boundaries: the first job key we encounter going
             # upward is the enclosing job; the second means we've left it.
             job_keys_seen = 0
+            enclosing_job_line = nil
 
             (line_num - 2).downto(0) do |i|
                 content = workflow.raw_lines[i]
@@ -117,11 +119,14 @@ module Rules
                 return false if content.match?(/^jobs:\s*$/)
 
                 # Detect job key lines (e.g. "  build:" at job-key indent)
-                if content.match?(/^\s+\w[\w-]*:\s*$/)
+                if content.match?(/^\s+(\w[\w-]*):\s*$/)
+                    key_name = content[/^\s+(\w[\w-]*):\s*$/, 1]
                     key_indent = content[/^\s*/].length
-                    # Job keys are typically at indent 2 (under `jobs:`)
-                    if key_indent <= 4
+                    # Job keys are typically at indent 2 (under `jobs:`);
+                    # skip known job properties (steps:, permissions:, etc.)
+                    if key_indent <= 4 && !JOB_PROPERTIES.include?(key_name)
                         job_keys_seen += 1
+                        enclosing_job_line = i if job_keys_seen == 1
                         # Second job key means we've crossed into a different job
                         return false if job_keys_seen > 1
                     end
@@ -139,10 +144,15 @@ module Rules
 
                         if above.match?(/^\s+\w[\w-]*:\s*$/)
                             above_indent = above[/^\s*/].length
-                            if if_indent == above_indent + 2
+                            # The job key above must be our enclosing job, not a
+                            # different one. If we already found the enclosing job
+                            # key, verify this `if:` belongs to it.
+                            if if_indent == above_indent + 2 &&
+                               (enclosing_job_line.nil? || j == enclosing_job_line)
                                 condition = content[/if:\s*(.+)/, 1]&.strip
                                 return safe_guard_condition?(condition) if condition
                             end
+                            break
                         end
                     end
                 end
