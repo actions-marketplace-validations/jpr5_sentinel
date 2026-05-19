@@ -5,7 +5,7 @@ require "fileutils"
 module Bot
     class State
         def initialize(path = Config::STATE_FILE)
-            @path = path
+            @path = resolve_state_path(path)
             @data = with_lock {
                 if File.exist?(path)
                     JSON.parse(File.read(path))
@@ -194,9 +194,19 @@ module Bot
             $stderr.puts "Auto-restore failed (non-fatal): #{e.message}"
         end
 
+        def resolve_state_path(path)
+            dir = File.dirname(path)
+            FileUtils.mkdir_p(dir)
+            path
+        rescue Errno::EROFS, Errno::EACCES, Errno::EPERM
+            fallback = File.join(Dir.pwd, "bot", "state.json")
+            $stderr.puts "Cannot write to #{dir}, falling back to #{fallback}"
+            FileUtils.mkdir_p(File.dirname(fallback))
+            fallback
+        end
+
         def with_lock(&block)
             lockfile = "#{@path}.lock"
-            FileUtils.mkdir_p(File.dirname(lockfile))
             File.open(lockfile, File::CREAT | File::RDWR) do |f|
                 f.flock(File::LOCK_EX)
                 block.call
