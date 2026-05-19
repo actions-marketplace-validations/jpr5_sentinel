@@ -637,6 +637,7 @@ class TestBotState < Minitest::Test
 
         # Stub Backup to write backup_data to the state file when restore is called
         require_relative "../bot/backup"
+        original_restore = Bot::Backup.instance_method(:restore)
         Bot::Backup.define_method(:restore) do
             tmp = "#{@state_path}.tmp"
             File.write(tmp, JSON.pretty_generate(backup_data))
@@ -651,10 +652,7 @@ class TestBotState < Minitest::Test
     ensure
         ENV.delete("SENTINEL_BACKUP_GIST_ID")
         ENV.delete("GITHUB_TOKEN")
-        # Remove the stub
-        Bot::Backup.define_method(:restore) do
-            Bot::Backup.instance_method(:restore).bind(self).call
-        end rescue nil
+        Bot::Backup.define_method(:restore, original_restore) if original_restore rescue nil
     end
 
     def test_auto_restore_skipped_when_state_has_repos
