@@ -906,6 +906,3 @@ if __FILE__ == $0
     end
     Bot::ScannerBot.new(token: token, pattern: options[:pattern], dry_run: options[:dry_run], limit: options[:limit], queue_mode: options[:queue]).run
 end
-
-# TEMPORARY KILL SWITCH — remove when bot is ready for production
-# Added 2026-05-18 after uncontrolled PR spam incident
