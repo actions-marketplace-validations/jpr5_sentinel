@@ -973,8 +973,8 @@ get "/scan" do
          <a href="/queue">approval queue</a> for review before any PRs are opened.</p>
       <form method="POST" action="/scan">
         <input type="hidden" name="pattern" value="rotate">
-        <label for="limit">Repos to scan (max 50)</label>
-        <input type="number" name="limit" id="limit" value="10" min="1" max="50">
+        <label for="limit">Repos to scan (max 500)</label>
+        <input type="number" name="limit" id="limit" value="100" min="1" max="500">
         <button type="submit">Start Scan</button>
       </form>
       <p class="note">Rotates through search queries automatically. May take 30-120 seconds.</p>
@@ -989,7 +989,7 @@ post "/scan" do
     halt 500, "GITHUB_TOKEN not configured" unless token
 
     pattern = params["pattern"] || "rotate"
-    limit = [[(params["limit"] || "5").to_i, 1].max, 50].min
+    limit = [[(params["limit"] || "5").to_i, 1].max, 500].min
 
     require_relative "scanner_bot"
     bot = Bot::ScannerBot.new(

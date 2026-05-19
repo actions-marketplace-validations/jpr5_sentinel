@@ -12,4 +12,4 @@ RUN mkdir -p /sentinel/data
 WORKDIR /sentinel
 
 # Run a queue-mode scan and exit. Railway cron or GitHub Actions triggers the container.
-CMD ["ruby", "-Ilib", "-Ibot", "bot/scanner_bot.rb", "--queue", "--limit", "10", "--pattern", "rotate"]
+CMD ["ruby", "-Ilib", "-Ibot", "bot/scanner_bot.rb", "--queue", "--limit", "100", "--pattern", "rotate"]
