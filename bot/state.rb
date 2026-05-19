@@ -1,5 +1,6 @@
 require "json"
 require "time"
+require "fileutils"
 
 module Bot
     class State
@@ -155,6 +156,15 @@ module Bot
             prs_opened_today >= Config::MAX_PRS_PER_DAY
         end
 
+        def dashboard_excluded_statuses
+            @data.dig("dashboard_preferences", "excluded_statuses") || []
+        end
+
+        def set_dashboard_excluded_statuses(statuses)
+            @data["dashboard_preferences"] ||= {}
+            @data["dashboard_preferences"]["excluded_statuses"] = statuses
+        end
+
         def summary
             total_prs = @data["repos"].sum { |_, repo_data| (repo_data["prs"] || []).length }
             {
@@ -186,6 +196,7 @@ module Bot
 
         def with_lock(&block)
             lockfile = "#{@path}.lock"
+            FileUtils.mkdir_p(File.dirname(lockfile))
             File.open(lockfile, File::CREAT | File::RDWR) do |f|
                 f.flock(File::LOCK_EX)
                 block.call
