@@ -713,6 +713,7 @@ class TestBotState < Minitest::Test
         ENV["GITHUB_TOKEN"] = "test-token"
 
         require_relative "../bot/backup"
+        original_restore = Bot::Backup.instance_method(:restore)
         Bot::Backup.define_method(:restore) do
             raise "Simulated network error"
         end
@@ -723,8 +724,6 @@ class TestBotState < Minitest::Test
     ensure
         ENV.delete("SENTINEL_BACKUP_GIST_ID")
         ENV.delete("GITHUB_TOKEN")
-        Bot::Backup.define_method(:restore) do
-            Bot::Backup.instance_method(:restore).bind(self).call
-        end rescue nil
+        Bot::Backup.define_method(:restore, original_restore) if original_restore rescue nil
     end
 end
