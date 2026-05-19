@@ -24,7 +24,7 @@ get "/" do
     <head>
       <title>Sentinel Bot</title>
       <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
       <meta property="og:title" content="Sentinel Bot">
       <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
     </head>
@@ -119,7 +119,7 @@ get "/dashboard" do
       <meta charset="UTF-8">
       <title>Dashboard — Sentinel</title>
       <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
       <meta property="og:title" content="Dashboard &mdash; Sentinel Bot">
       <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
       <style>
@@ -169,7 +169,7 @@ get "/opt-out" do
     <head>
       <title>Opt Out &mdash; Sentinel</title>
       <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
       <meta property="og:title" content="Sentinel Bot">
       <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
     </head>
@@ -213,7 +213,7 @@ post "/opt-out" do
     <head>
       <title>Opted Out &mdash; Sentinel</title>
       <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
       <meta property="og:title" content="Sentinel Bot">
       <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
     </head>
@@ -242,7 +242,7 @@ get "/adopt" do
     <head>
       <title>Adopt Sentinel &mdash; Sentinel</title>
       <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
       <meta property="og:title" content="Sentinel Bot">
       <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
     </head>
@@ -331,7 +331,7 @@ post "/adopt" do
         <head>
           <title>PR Created &mdash; Sentinel</title>
           <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-          <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
+          <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
           <meta property="og:title" content="Sentinel Bot">
           <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
         </head>
@@ -362,7 +362,7 @@ get "/rules" do
       <meta charset="UTF-8">
       <title>Rules — Sentinel</title>
       <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
       <meta property="og:title" content="Security Rules &mdash; Sentinel">
       <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
       <style>
@@ -417,8 +417,8 @@ end
 
 # Static assets
 get "/favicon.ico" do
-    content_type "image/svg+xml"
-    send_file File.join(File.dirname(__FILE__), "assets", "favicon.svg")
+    content_type "image/png"
+    send_file File.join(File.dirname(__FILE__), "assets", "favicon.png")
 end
 
 get "/favicon.svg" do
@@ -426,9 +426,9 @@ get "/favicon.svg" do
     send_file File.join(File.dirname(__FILE__), "assets", "favicon.svg")
 end
 
-get "/og-image.svg" do
-    content_type "image/svg+xml"
-    send_file File.join(File.dirname(__FILE__), "assets", "og-image.svg")
+get "/og-image.png" do
+    content_type "image/png"
+    send_file File.join(File.dirname(__FILE__), "assets", "og-image.png")
 end
 
 # Token management helpers
@@ -596,7 +596,7 @@ def render_markdown_page(rule, markdown)
       <meta charset="UTF-8">
       <title>#{escape_html(rule)} — Sentinel</title>
       <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.svg">
+      <meta property="og:image" content="https://sentinel-bot.copilotkit.dev/og-image.png">
       <meta property="og:title" content="#{escape_html(rule)} &mdash; Sentinel">
       <meta property="og:description" content="CI/CD security scanner for GitHub Actions workflows">
       <style>
