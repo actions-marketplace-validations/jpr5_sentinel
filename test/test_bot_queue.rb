@@ -294,4 +294,138 @@ class TestBotQueue < Minitest::Test
         assert_equal "issue", reloaded.pending[0]["type"]
         assert_equal "pr", reloaded.pending[1]["type"]
     end
+
+    # --- Auto-restore from backup tests ---
+
+    def test_auto_restore_triggers_when_queue_empty_and_backup_configured
+        backup_data = {
+            "pending" => [
+                { "id" => "restore-1", "repo" => "owner/backed-up", "title" => "Restored item",
+                  "body" => "b", "files" => {}, "findings" => [], "queued_at" => Time.now.utc.iso8601 }
+            ],
+            "approved" => [],
+            "rejected" => []
+        }
+
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "test-queue-gist"
+        ENV["GITHUB_TOKEN"] = "test-token"
+
+        require_relative "../bot/backup"
+        original_restore = Bot::Backup.instance_method(:restore)
+        Bot::Backup.define_method(:restore) do
+            FileUtils.mkdir_p(File.dirname(@queue_path))
+            tmp = "#{@queue_path}.tmp"
+            File.write(tmp, JSON.pretty_generate(backup_data))
+            File.rename(tmp, @queue_path)
+            true
+        end
+
+        queue = Bot::Queue.new(@queue_file)
+        assert_equal 1, queue.size
+        assert_equal "owner/backed-up", queue.pending.first["repo"]
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+        ENV.delete("GITHUB_TOKEN")
+        Bot::Backup.define_method(:restore, original_restore) if original_restore rescue nil
+    end
+
+    def test_auto_restore_skipped_when_queue_has_items
+        data = {
+            "pending" => [
+                { "id" => "existing-1", "repo" => "owner/existing", "title" => "Existing",
+                  "body" => "b", "files" => {}, "findings" => [], "queued_at" => Time.now.utc.iso8601 }
+            ],
+            "approved" => [],
+            "rejected" => []
+        }
+        File.write(@queue_file, JSON.pretty_generate(data))
+
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "test-queue-gist"
+        ENV["GITHUB_TOKEN"] = "test-token"
+
+        restore_called = false
+        require_relative "../bot/backup"
+        original_restore = Bot::Backup.instance_method(:restore)
+        Bot::Backup.define_method(:restore) do
+            restore_called = true
+            true
+        end
+
+        queue = Bot::Queue.new(@queue_file)
+        refute restore_called, "Auto-restore should not trigger when queue already has items"
+        assert_equal 1, queue.size
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+        ENV.delete("GITHUB_TOKEN")
+        Bot::Backup.define_method(:restore, original_restore) if original_restore rescue nil
+    end
+
+    def test_auto_restore_skipped_when_no_gist_id
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+        ENV["GITHUB_TOKEN"] = "test-token"
+
+        queue = Bot::Queue.new(@queue_file)
+        assert_equal 0, queue.size
+    ensure
+        ENV.delete("GITHUB_TOKEN")
+    end
+
+    def test_auto_restore_skipped_when_no_github_token
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "test-queue-gist"
+        ENV.delete("GITHUB_TOKEN")
+
+        queue = Bot::Queue.new(@queue_file)
+        assert_equal 0, queue.size
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+    end
+
+    def test_auto_restore_failure_is_non_fatal
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "test-queue-gist"
+        ENV["GITHUB_TOKEN"] = "test-token"
+
+        require_relative "../bot/backup"
+        original_restore = Bot::Backup.instance_method(:restore)
+        Bot::Backup.define_method(:restore) do
+            raise "Simulated network error"
+        end
+
+        # Should not raise, should produce an empty queue
+        queue = Bot::Queue.new(@queue_file)
+        assert_equal 0, queue.size
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+        ENV.delete("GITHUB_TOKEN")
+        Bot::Backup.define_method(:restore, original_restore) if original_restore rescue nil
+    end
+
+    def test_auto_restore_skipped_when_approved_items_exist
+        data = {
+            "pending" => [],
+            "approved" => [
+                { "id" => "approved-1", "repo" => "owner/approved", "title" => "Done",
+                  "body" => "b", "files" => {}, "findings" => [], "approved_at" => Time.now.utc.iso8601 }
+            ],
+            "rejected" => []
+        }
+        File.write(@queue_file, JSON.pretty_generate(data))
+
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "test-queue-gist"
+        ENV["GITHUB_TOKEN"] = "test-token"
+
+        restore_called = false
+        require_relative "../bot/backup"
+        original_restore = Bot::Backup.instance_method(:restore)
+        Bot::Backup.define_method(:restore) do
+            restore_called = true
+            true
+        end
+
+        queue = Bot::Queue.new(@queue_file)
+        refute restore_called, "Auto-restore should not trigger when approved items exist"
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+        ENV.delete("GITHUB_TOKEN")
+        Bot::Backup.define_method(:restore, original_restore) if original_restore rescue nil
+    end
 end

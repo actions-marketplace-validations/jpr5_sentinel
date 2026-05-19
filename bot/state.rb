@@ -179,7 +179,8 @@ module Bot
         def auto_restore_from_backup
             require_relative "backup"
             $stderr.puts "State is empty — restoring from gist backup..."
-            backup = Backup.new(token: ENV["GITHUB_TOKEN"], state_path: @path)
+            queue_path = File.join(File.dirname(@path), "queue.json")
+            backup = Backup.new(token: ENV["GITHUB_TOKEN"], state_path: @path, queue_path: queue_path)
             with_lock { backup.restore }
             # Re-read the restored file
             if File.exist?(@path)

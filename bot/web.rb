@@ -799,6 +799,11 @@ post "/queue/:id/approve" do
     item = queue.approve(match["id"])
     queue.save
 
+    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+        require_relative "backup"
+        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
+    end
+
     AUDIT.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]} type=#{item["type"] || "pr"} via=web")
 
     writer = Bot::PrWriter.new(token: token)
@@ -914,6 +919,11 @@ post "/queue/:id/reject" do
 
     item = queue.reject(match["id"], reason: reason)
     queue.save
+
+    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+        require_relative "backup"
+        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
+    end
 
     AUDIT.log("QUEUE_REJECT", repo: item["repo"], details: "id=#{match["id"][0, 8]} reason=#{reason || 'none'} via=web")
 

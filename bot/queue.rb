@@ -7,6 +7,12 @@ module Bot
         def initialize(path = nil)
             @path = path || ENV["SENTINEL_QUEUE_PATH"] || "bot/queue.json"
             @data = File.exist?(@path) ? JSON.parse(File.read(@path)) : { "pending" => [], "approved" => [], "rejected" => [] }
+
+            # Auto-restore from gist backup if queue is empty and backup is configured
+            if @data["pending"].empty? && @data["approved"].empty? && @data["rejected"].empty? &&
+               ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+                auto_restore_from_backup
+            end
         end
 
         def save
@@ -61,6 +67,28 @@ module Bot
 
         def size
             @data["pending"].length
+        end
+
+        private
+
+        def auto_restore_from_backup
+            require_relative "backup"
+            $stderr.puts "Queue is empty — restoring from gist backup..."
+            backup = Backup.new(token: ENV["GITHUB_TOKEN"], queue_path: @path)
+            backup.restore
+            # Re-read the restored file
+            if File.exist?(@path)
+                restored = JSON.parse(File.read(@path))
+                total = (restored["pending"]&.length || 0) +
+                        (restored["approved"]&.length || 0) +
+                        (restored["rejected"]&.length || 0)
+                if total > 0
+                    @data = restored
+                    $stderr.puts "Restored #{total} queue items from backup"
+                end
+            end
+        rescue => e
+            $stderr.puts "Queue auto-restore failed (non-fatal): #{e.message}"
         end
     end
 end
