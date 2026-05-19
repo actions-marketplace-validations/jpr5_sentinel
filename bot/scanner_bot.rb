@@ -20,7 +20,7 @@ require_relative "sync"
 
 module Bot
     class ScannerBot
-        def initialize(token: nil, pattern: "rotate", dry_run: false, limit: nil, queue_mode: false)
+        def initialize(token: nil, pattern: "rotate", dry_run: false, limit: nil, queue_mode: false, repos: nil)
             if ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"]
                 @auth = GitHubAppAuth.new
                 @token = token || ENV["GITHUB_TOKEN"]
@@ -41,6 +41,7 @@ module Bot
             @dry_run = dry_run
             @queue_mode = queue_mode
             @limit = limit
+            @repos = repos
             @audit = Audit.new
             @summary = { scanned: 0, findings: 0, prs_opened: 0, issues_opened: 0, queued: 0, skipped: 0, errors: 0 }
         end
@@ -48,12 +49,19 @@ module Bot
         def run
             sync_pr_statuses
 
-            query = select_query
-            @audit.run_start(query[:pattern], @dry_run, @limit)
-            $stderr.puts "Bot run: pattern=#{query[:pattern]} dry_run=#{@dry_run}"
-            $stderr.puts "Query: #{query[:query]}"
-
-            candidates = @search.find_candidates(query)
+            if @repos
+                candidates = @repos.split(",").map(&:strip).reject(&:empty?).map { |r| { full_name: r, stars: 0 } }
+                pattern = "targeted"
+                @audit.run_start(pattern, @dry_run, @limit)
+                $stderr.puts "Bot run: targeted repos=#{candidates.map { |c| c[:full_name] }.join(", ")} dry_run=#{@dry_run}"
+            else
+                query = select_query
+                pattern = query[:pattern]
+                @audit.run_start(pattern, @dry_run, @limit)
+                $stderr.puts "Bot run: pattern=#{pattern} dry_run=#{@dry_run}"
+                $stderr.puts "Query: #{query[:query]}"
+                candidates = @search.find_candidates(query)
+            end
             $stderr.puts "Found #{candidates.length} candidate repos"
 
             candidates.each do |repo|
@@ -65,7 +73,7 @@ module Bot
                     break
                 end
 
-                if @state.already_processed?(repo[:full_name], query[:pattern])
+                if @state.already_processed?(repo[:full_name], pattern)
                     @audit.skip(repo[:full_name], "already_processed")
                     @summary[:skipped] += 1
                     next
@@ -77,7 +85,7 @@ module Bot
                     next
                 end
 
-                scan_and_fix(repo, query[:pattern])
+                scan_and_fix(repo, pattern)
             end
 
             @state.save
@@ -713,6 +721,10 @@ if __FILE__ == $0
             options[:limit] = n
         end
 
+        opts.on("--repos REPOS", "Comma-separated owner/name repos to scan directly (bypasses search)") do |r|
+            options[:repos] = r
+        end
+
         opts.on("-h", "--help", "Show this help message") do
             puts opts
             exit 0
@@ -900,5 +912,5 @@ if __FILE__ == $0
     unless token || (ENV["GITHUB_APP_ID"] && ENV["GITHUB_APP_PRIVATE_KEY"])
         abort("Either GITHUB_TOKEN or GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY required")
     end
-    Bot::ScannerBot.new(token: token, pattern: options[:pattern], dry_run: options[:dry_run], limit: options[:limit], queue_mode: options[:queue]).run
+    Bot::ScannerBot.new(token: token, pattern: options[:pattern], dry_run: options[:dry_run], limit: options[:limit], queue_mode: options[:queue], repos: options[:repos]).run
 end

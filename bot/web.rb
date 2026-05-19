@@ -977,11 +977,14 @@ get "/scan" do
         <input type="hidden" name="pattern" value="rotate">
         <label for="token">Access code</label>
         <input type="password" name="token" id="token" autocomplete="off">
+        <label for="repos">Target repos (optional)</label>
+        <textarea name="repos" id="repos" rows="3" placeholder="owner/name, owner/name2 &#10;Leave blank to use search rotation"
+          style="display: block; margin-top: 0.3rem; padding: 8px 12px; border-radius: 6px; border: 1px solid #2a2a3a; background: #16161f; color: #e8e8f0; font-size: 0.95rem; width: 100%; box-sizing: border-box; font-family: -apple-system, system-ui, sans-serif; resize: vertical;"></textarea>
         <label for="limit">Repos to scan (max 500)</label>
         <input type="number" name="limit" id="limit" value="100" min="1" max="500">
         <button type="submit">Start Scan</button>
       </form>
-      <p class="note">Rotates through search queries automatically. May take 30-120 seconds.</p>
+      <p class="note">Rotates through search queries automatically. Specify target repos to bypass search and scan specific repositories directly. May take 30-120 seconds.</p>
       <script>
         (function() {
           var f = document.getElementById("scan-form");
@@ -1010,6 +1013,8 @@ post "/scan" do
 
     pattern = params["pattern"] || "rotate"
     limit = [[(params["limit"] || "5").to_i, 1].max, 500].min
+    repos = params["repos"]&.strip
+    repos = nil if repos&.empty?
 
     require_relative "scanner_bot"
     bot = Bot::ScannerBot.new(
@@ -1017,7 +1022,8 @@ post "/scan" do
         pattern: pattern,
         dry_run: false,
         limit: limit,
-        queue_mode: true
+        queue_mode: true,
+        repos: repos
     )
 
     Thread.new do
