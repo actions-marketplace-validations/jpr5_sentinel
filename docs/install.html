@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <!-- Redirect /install.html to clean URL -->
+        <script>
+            if (window.location.pathname.endsWith("/install.html")) {
+                window.history.replaceState(null, "", "/install");
+            }
+        </script>
+        <title>Install sentinel — Add CI security scanning to your repo</title>
+        <meta
+            name="description"
+            content="Add Sentinel to your GitHub Actions workflows in 30 seconds. Catch CI/CD security vulnerabilities on every pull request."
+        />
+
+        <!-- Open Graph / Social -->
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://sentinel.copilotkit.dev/install" />
+        <meta property="og:title" content="Install sentinel — Add CI security scanning to your repo" />
+        <meta
+            property="og:description"
+            content="Catch CI/CD security vulnerabilities on every pull request. Zero config, no secrets needed."
+        />
+        <meta property="og:image" content="https://sentinel.copilotkit.dev/og-image.svg" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Install sentinel — CI security scanning in 30 seconds" />
+        <meta
+            name="twitter:description"
+            content="Catch CI/CD security vulnerabilities on every pull request. Zero config, no secrets needed."
+        />
+        <meta name="twitter:image" content="https://sentinel.copilotkit.dev/og-image.svg" />
+
+        <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+
+        <!-- Fonts -->
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Instrument+Sans:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+
+        <style>
+            /* ─── Reset & Variables ───────────────────────────────────────── */
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            :root {
+                --bg-deep: #0a0a0f;
+                --bg-surface: #111118;
+                --bg-card: #16161f;
+                --bg-card-hover: #1c1c28;
+                --border: #2a2a3a;
+                --border-bright: #3a3a50;
+                --text-primary: #e8e8f0;
+                --text-secondary: #8888a0;
+                --text-dim: #555570;
+                --accent: #ff4444;
+                --accent-dim: #cc3636;
+                --accent-glow: rgba(255, 68, 68, 0.15);
+                --accent-glow-strong: rgba(255, 68, 68, 0.3);
+                --warning: #ffaa00;
+                --error: #ff4466;
+                --blue: #4488ff;
+                --purple: #aa66ff;
+                --cyan: #22d3ee;
+                --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+                --font-features-mono: "liga" 0, "calt" 0;
+                --font-sans: "Instrument Sans", -apple-system, system-ui, sans-serif;
+                --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            }
+
+            html {
+                font-size: 16px;
+                scroll-behavior: smooth;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+
+            body {
+                font-family: var(--font-sans);
+                background: var(--bg-deep);
+                color: var(--text-primary);
+                line-height: 1.6;
+                overflow-x: hidden;
+            }
+
+            code,
+            pre,
+            kbd {
+                font-feature-settings: var(--font-features-mono);
+            }
+
+            a {
+                color: var(--accent);
+                text-decoration: none;
+            }
+            a:hover {
+                text-decoration: underline;
+            }
+
+            /* ─── Noise Overlay ──────────────────────────────────────────── */
+            body::before {
+                content: "";
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+                pointer-events: none;
+                z-index: 9999;
+            }
+
+            /* ─── Layout ─────────────────────────────────────────────────── */
+            .container {
+                max-width: 1120px;
+                margin: 0 auto;
+                padding: 0 2rem;
+            }
+
+            .container--narrow {
+                max-width: 760px;
+                margin: 0 auto;
+                padding: 0 2rem;
+            }
+
+            /* ─── Nav ────────────────────────────────────────────────────── */
+            nav {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                z-index: 100;
+                padding: 1rem 0;
+                background: rgba(10, 10, 15, 0.85);
+                backdrop-filter: blur(20px) saturate(1.4);
+                -webkit-backdrop-filter: blur(20px) saturate(1.4);
+                border-bottom: 1px solid var(--border);
+            }
+            nav .container {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            }
+            .nav-brand {
+                display: flex;
+                flex-direction: column;
+                gap: 0;
+                font-family: var(--font-mono);
+                font-weight: 600;
+                font-size: 1rem;
+                color: var(--text-primary);
+            }
+            .nav-brand a {
+                color: var(--text-primary);
+                text-decoration: none;
+            }
+            .nav-brand a:hover {
+                text-decoration: none;
+            }
+            .nav-brand .brand-main {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+            }
+            .nav-brand .prompt {
+                color: var(--accent);
+            }
+            .nav-brand .powered-by {
+                font-size: 0.6rem;
+                font-weight: 400;
+                color: var(--text-dim);
+                padding-left: 1.5rem;
+                margin-top: -2px;
+            }
+            .nav-brand .powered-by a {
+                color: var(--text-dim);
+                transition: color 0.2s;
+            }
+            .nav-brand .powered-by a:hover {
+                color: var(--text-secondary);
+                text-decoration: none;
+            }
+            .nav-links {
+                display: flex;
+                align-items: center;
+                gap: 2rem;
+                list-style: none;
+            }
+            .nav-links a {
+                color: var(--text-secondary);
+                font-size: 0.875rem;
+                font-weight: 500;
+                transition: color 0.2s;
+            }
+            .nav-links a:hover {
+                color: var(--text-primary);
+                text-decoration: none;
+            }
+            .nav-links .gh-link {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.4rem 1rem;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                transition:
+                    border-color 0.2s,
+                    background 0.2s;
+            }
+            .nav-links .gh-link:hover {
+                border-color: var(--border-bright);
+                background: var(--bg-card);
+            }
+
+            /* ─── Animations ─────────────────────────────────────────────── */
+            @keyframes fadeUp {
+                from {
+                    opacity: 0;
+                    transform: translateY(30px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            .fade-in {
+                opacity: 0;
+                transform: translateY(30px);
+                transition:
+                    opacity 0.8s var(--ease-out-expo),
+                    transform 0.8s var(--ease-out-expo);
+            }
+            .fade-in.visible {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            /* ─── Hero ───────────────────────────────────────────────────── */
+            .hero {
+                padding: 120px 0 3rem;
+                position: relative;
+                overflow: hidden;
+            }
+            .hero::before {
+                content: "";
+                position: absolute;
+                top: -200px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 800px;
+                height: 600px;
+                background: radial-gradient(ellipse, var(--accent-glow) 0%, transparent 70%);
+                pointer-events: none;
+            }
+            .hero .container--narrow {
+                position: relative;
+                z-index: 1;
+            }
+            .hero h1 {
+                font-family: var(--font-sans);
+                font-size: clamp(2rem, 5vw, 3.5rem);
+                font-weight: 700;
+                line-height: 1.1;
+                letter-spacing: -0.03em;
+                animation: fadeUp 0.8s var(--ease-out-expo) 0.1s both;
+            }
+            .hero h1 .highlight {
+                color: var(--accent);
+            }
+            .hero-sub {
+                font-size: 1.15rem;
+                color: var(--text-secondary);
+                margin-top: 1rem;
+                line-height: 1.7;
+                animation: fadeUp 0.8s var(--ease-out-expo) 0.2s both;
+            }
+
+            /* ─── Code Block ─────────────────────────────────────────────── */
+            .code-block {
+                position: relative;
+                margin-top: 2.5rem;
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow:
+                    0 8px 32px rgba(0, 0, 0, 0.4),
+                    0 2px 8px rgba(0, 0, 0, 0.2);
+            }
+            .code-block-titlebar {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0.75rem 1rem;
+                background: rgba(0, 0, 0, 0.3);
+                border-bottom: 1px solid var(--border);
+            }
+            .code-block-titlebar .left {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            .code-block-titlebar .dots {
+                display: flex;
+                gap: 6px;
+            }
+            .code-block-titlebar .dots span {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+            }
+            .code-block-titlebar .dots span:nth-child(1) {
+                background: #ff5f57;
+            }
+            .code-block-titlebar .dots span:nth-child(2) {
+                background: #ffbd2e;
+            }
+            .code-block-titlebar .dots span:nth-child(3) {
+                background: #28ca42;
+            }
+            .code-block-titlebar .title {
+                font-family: var(--font-mono);
+                font-size: 0.75rem;
+                color: var(--text-dim);
+                margin-left: 0.5rem;
+            }
+            .code-block-titlebar .copy-btn {
+                background: none;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                color: var(--text-secondary);
+                padding: 0.3rem 0.75rem;
+                font-family: var(--font-mono);
+                font-size: 0.7rem;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .code-block-titlebar .copy-btn:hover {
+                border-color: var(--accent);
+                color: var(--accent);
+            }
+            .code-block pre {
+                padding: 1.25rem;
+                font-family: var(--font-mono);
+                font-size: 0.8rem;
+                line-height: 1.7;
+                overflow-x: auto;
+                color: var(--text-secondary);
+            }
+
+            /* ─── Syntax Highlighting ────────────────────────────────────── */
+            .syn-key {
+                color: #88aaff;
+            }
+            .syn-str {
+                color: #66ddaa;
+            }
+            .syn-num {
+                color: #ffaa66;
+            }
+            .syn-bool {
+                color: #ff88aa;
+            }
+            .syn-bracket {
+                color: var(--text-dim);
+            }
+            .syn-comment {
+                color: var(--text-dim);
+                font-style: italic;
+            }
+
+            /* ─── Content Sections ───────────────────────────────────────── */
+            .content-section {
+                padding: 3rem 0;
+            }
+
+            .content-section h2 {
+                font-size: 1.35rem;
+                font-weight: 700;
+                letter-spacing: -0.02em;
+                margin-bottom: 1.25rem;
+            }
+
+            .content-section h2 .highlight {
+                color: var(--accent);
+            }
+
+            /* ─── Bullet List ────────────────────────────────────────────── */
+            .check-list {
+                list-style: none;
+                padding: 0;
+            }
+            .check-list li {
+                position: relative;
+                padding-left: 1.75rem;
+                margin-bottom: 0.75rem;
+                font-size: 1rem;
+                color: var(--text-secondary);
+                line-height: 1.6;
+            }
+            .check-list li::before {
+                content: "";
+                position: absolute;
+                left: 0;
+                top: 0.45em;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+            .check-list--does li::before {
+                background: var(--accent);
+                box-shadow: 0 0 8px var(--accent-glow-strong);
+            }
+            .check-list--doesnt li::before {
+                background: #28ca42;
+                box-shadow: 0 0 8px rgba(40, 202, 66, 0.3);
+            }
+
+            /* ─── Options Table ──────────────────────────────────────────── */
+            .options-table {
+                width: 100%;
+                border-collapse: separate;
+                border-spacing: 0;
+                font-size: 0.875rem;
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                overflow: hidden;
+            }
+            .options-table thead th {
+                padding: 0.75rem 1rem;
+                background: rgba(0, 0, 0, 0.3);
+                border-bottom: 1px solid var(--border);
+                font-weight: 600;
+                text-align: left;
+                font-family: var(--font-mono);
+                font-size: 0.8rem;
+                color: var(--text-secondary);
+                white-space: nowrap;
+            }
+            .options-table thead th:not(:last-child) {
+                border-right: 1px solid var(--border);
+            }
+            .options-table tbody td {
+                padding: 0.75rem 1rem;
+                border-bottom: 1px solid var(--border);
+                color: var(--text-secondary);
+                line-height: 1.5;
+            }
+            .options-table tbody td:not(:last-child) {
+                border-right: 1px solid var(--border);
+            }
+            .options-table tbody tr:last-child td {
+                border-bottom: none;
+            }
+            .options-table tbody td:first-child {
+                font-family: var(--font-mono);
+                color: var(--text-primary);
+                font-weight: 500;
+                white-space: nowrap;
+            }
+            .options-table tbody tr:hover td {
+                background: var(--bg-card-hover);
+            }
+            .options-table code {
+                font-family: var(--font-mono);
+                font-size: 0.8em;
+                background: rgba(0, 0, 0, 0.3);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                padding: 0.1rem 0.4rem;
+            }
+
+            /* ─── Divider ────────────────────────────────────────────────── */
+            .section-divider {
+                border: none;
+                border-top: 1px solid var(--border);
+                margin: 0;
+            }
+
+            /* --- Cross-Nav Footer ---------------------------------------- */
+            .cross-nav-footer {
+                padding: 2rem 0;
+                border-top: 1px solid var(--border);
+            }
+            .cross-nav-toolbar {
+                max-width: 1120px;
+                margin: 0 auto;
+                padding: 0 2rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+            .cn-label {
+                font-family: var(--font-mono);
+                font-size: 0.8rem;
+                color: var(--text-dim);
+                margin-right: 0.25rem;
+                white-space: nowrap;
+            }
+            .cn-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                padding: 0.35rem 0.85rem;
+                border: 1px solid var(--border);
+                border-radius: 100px;
+                font-family: var(--font-mono);
+                font-size: 0.75rem;
+                font-weight: 500;
+                color: var(--text-secondary);
+                text-decoration: none;
+                transition:
+                    border-color 0.2s,
+                    background 0.2s,
+                    color 0.2s;
+                white-space: nowrap;
+            }
+            .cn-pill:hover {
+                border-color: #3a3a50;
+                color: var(--text-primary);
+                text-decoration: none;
+                background: rgba(255, 255, 255, 0.03);
+            }
+            .cn-pill.active {
+                border-color: var(--accent);
+                background: var(--accent-glow);
+                color: var(--text-primary);
+                cursor: default;
+                pointer-events: none;
+            }
+            .cn-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+
+            /* ─── Footer ─────────────────────────────────────────────────── */
+            footer {
+                padding: 3rem 0;
+                border-top: 1px solid var(--border);
+                text-align: center;
+            }
+            .footer-brand {
+                font-family: var(--font-mono);
+                font-size: 0.85rem;
+                color: var(--text-dim);
+                margin-bottom: 1rem;
+            }
+            .footer-brand .prompt {
+                color: var(--accent);
+            }
+            .footer-links {
+                display: flex;
+                gap: 2rem;
+                justify-content: center;
+                list-style: none;
+            }
+            .footer-links a {
+                color: var(--text-secondary);
+                font-size: 0.85rem;
+                font-weight: 500;
+                transition: color 0.2s;
+            }
+            .footer-links a:hover {
+                color: var(--text-primary);
+                text-decoration: none;
+            }
+
+            /* ─── Mobile ──────────────────────────────────────────────────── */
+            @media (max-width: 768px) {
+                .nav-links {
+                    gap: 1rem;
+                }
+                .nav-links .nav-hide-mobile {
+                    display: none;
+                }
+                .options-table {
+                    font-size: 0.8rem;
+                }
+                .options-table thead th,
+                .options-table tbody td {
+                    padding: 0.6rem 0.75rem;
+                }
+            }
+
+            @media (max-width: 640px) {
+                .cross-nav-toolbar {
+                    gap: 0.4rem;
+                }
+                .cn-pill {
+                    font-size: 0.7rem;
+                    padding: 0.3rem 0.7rem;
+                }
+            }
+
+            @media (max-width: 480px) {
+                .hero {
+                    padding: 8rem 0 2rem;
+                }
+                .hero h1 {
+                    font-size: 1.75rem;
+                }
+                .nav-brand .powered-by {
+                    display: none;
+                }
+                .cn-label {
+                    display: none;
+                }
+                .options-table {
+                    font-size: 0.75rem;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <!-- ─── Nav ──────────────────────────────────────────────────── -->
+        <nav>
+            <div class="container">
+                <div class="nav-brand">
+                    <a href="/">
+                        <div class="brand-main"><span class="prompt">$</span> sentinel</div>
+                    </a>
+                    <div class="powered-by">powered by <a href="https://copilotkit.dev" target="_blank" rel="noopener">CopilotKit</a></div>
+                </div>
+                <ul class="nav-links">
+                    <li><a href="/#features" class="nav-hide-mobile">Features</a></li>
+                    <li><a href="/#rules" class="nav-hide-mobile">Rules</a></li>
+                    <li>
+                        <a
+                            href="https://github.com/jpr5/sentinel"
+                            class="gh-link"
+                            target="_blank"
+                            rel="noopener"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                <path
+                                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+                                />
+                            </svg>
+                            GitHub
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- ─── Hero ─────────────────────────────────────────────────── -->
+        <section class="hero">
+            <div class="container--narrow">
+                <h1>Add <span class="highlight">Sentinel</span> to your repo</h1>
+                <p class="hero-sub">
+                    Catch CI/CD security vulnerabilities on every pull request.
+                </p>
+            </div>
+        </section>
+
+        <!-- ─── Quick Start ──────────────────────────────────────────── -->
+        <section class="content-section fade-in">
+            <div class="container--narrow">
+                <h2>Quick start</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 0.95rem;">
+                    Create <code style="font-family: var(--font-mono); background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.85em;">.github/workflows/sentinel.yml</code> in your repository:
+                </p>
+
+                <div class="code-block">
+                    <div class="code-block-titlebar">
+                        <div class="left">
+                            <div class="dots"><span></span><span></span><span></span></div>
+                            <span class="title">.github/workflows/sentinel.yml</span>
+                        </div>
+                        <button class="copy-btn" onclick="copyYaml(this)">Copy</button>
+                    </div>
+                    <pre id="workflow-yaml"><span class="syn-comment"># .github/workflows/sentinel.yml</span>
+<span class="syn-key">name</span><span class="syn-bracket">:</span> <span class="syn-str">Security Scan</span>
+<span class="syn-key">on</span><span class="syn-bracket">:</span>
+  <span class="syn-key">pull_request</span><span class="syn-bracket">:</span>
+    <span class="syn-key">paths</span><span class="syn-bracket">:</span> <span class="syn-bracket">[</span><span class="syn-str">'.github/workflows/**'</span><span class="syn-bracket">]</span>
+  <span class="syn-key">push</span><span class="syn-bracket">:</span>
+    <span class="syn-key">branches</span><span class="syn-bracket">:</span> <span class="syn-bracket">[</span><span class="syn-str">main</span><span class="syn-bracket">]</span>
+    <span class="syn-key">paths</span><span class="syn-bracket">:</span> <span class="syn-bracket">[</span><span class="syn-str">'.github/workflows/**'</span><span class="syn-bracket">]</span>
+
+<span class="syn-key">permissions</span><span class="syn-bracket">:</span>
+  <span class="syn-key">contents</span><span class="syn-bracket">:</span> <span class="syn-str">read</span>
+
+<span class="syn-key">jobs</span><span class="syn-bracket">:</span>
+  <span class="syn-key">scan</span><span class="syn-bracket">:</span>
+    <span class="syn-key">runs-on</span><span class="syn-bracket">:</span> <span class="syn-str">ubuntu-latest</span>
+    <span class="syn-key">timeout-minutes</span><span class="syn-bracket">:</span> <span class="syn-num">10</span>
+    <span class="syn-key">steps</span><span class="syn-bracket">:</span>
+      - <span class="syn-key">uses</span><span class="syn-bracket">:</span> <span class="syn-str">actions/checkout@v4</span>
+        <span class="syn-key">with</span><span class="syn-bracket">:</span>
+          <span class="syn-key">persist-credentials</span><span class="syn-bracket">:</span> <span class="syn-bool">false</span>
+      - <span class="syn-key">uses</span><span class="syn-bracket">:</span> <span class="syn-str">jpr5/sentinel@v1</span>
+        <span class="syn-key">with</span><span class="syn-bracket">:</span>
+          <span class="syn-key">severity</span><span class="syn-bracket">:</span> <span class="syn-str">high</span></pre>
+                </div>
+            </div>
+        </section>
+
+        <hr class="section-divider" />
+
+        <!-- ─── What it does ─────────────────────────────────────────── -->
+        <section class="content-section fade-in">
+            <div class="container--narrow">
+                <h2>What it <span class="highlight">does</span></h2>
+                <ul class="check-list check-list--does">
+                    <li>Scans workflow files for 32 security rules on every PR</li>
+                    <li>Posts inline annotations on the diff</li>
+                    <li>Fails the check if critical or high findings exist</li>
+                </ul>
+            </div>
+        </section>
+
+        <hr class="section-divider" />
+
+        <!-- ─── What it doesn't do ───────────────────────────────────── -->
+        <section class="content-section fade-in">
+            <div class="container--narrow">
+                <h2>What it <span class="highlight">doesn't</span> do</h2>
+                <ul class="check-list check-list--doesnt">
+                    <li>No secrets needed</li>
+                    <li>No write permissions</li>
+                    <li>No data sent anywhere &mdash; runs entirely in your CI</li>
+                </ul>
+            </div>
+        </section>
+
+        <hr class="section-divider" />
+
+        <!-- ─── Options ──────────────────────────────────────────────── -->
+        <section class="content-section fade-in">
+            <div class="container--narrow">
+                <h2>Options</h2>
+                <table class="options-table">
+                    <thead>
+                        <tr>
+                            <th>Input</th>
+                            <th>Description</th>
+                            <th>Default</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>severity</td>
+                            <td>Minimum severity to report (<code>low</code> / <code>medium</code> / <code>high</code> / <code>critical</code>)</td>
+                            <td><code>medium</code></td>
+                        </tr>
+                        <tr>
+                            <td>fail-on-findings</td>
+                            <td>Fail the check when findings exist</td>
+                            <td><code>true</code></td>
+                        </tr>
+                        <tr>
+                            <td>fix</td>
+                            <td>Auto-fix findings and commit</td>
+                            <td><code>false</code></td>
+                        </tr>
+                        <tr>
+                            <td>sarif</td>
+                            <td>Upload SARIF to GitHub Security tab</td>
+                            <td><code>false</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Cross-navigation toolbar -->
+        <div class="cross-nav-footer">
+            <div class="cross-nav-toolbar">
+                <span class="cn-label">copilotkit.dev /</span>
+                <a class="cn-pill" href="https://vscode.copilotkit.dev">
+                    <span class="cn-dot" style="background: #aa66ff"></span>vscode
+                </a>
+                <a class="cn-pill" href="https://aimock.copilotkit.dev">
+                    <span class="cn-dot" style="background: #00ff88"></span>aimock
+                </a>
+                <a class="cn-pill active" href="https://sentinel.copilotkit.dev">
+                    <span class="cn-dot" style="background: #ff4444"></span>sentinel
+                </a>
+                <a class="cn-pill" href="https://oversight.copilotkit.dev">
+                    <span class="cn-dot" style="background: #ff6688"></span>oversight
+                </a>
+                <a class="cn-pill" href="https://pathfinder.copilotkit.dev">
+                    <span class="cn-dot" style="background: #00ccff"></span>pathfinder
+                </a>
+                <a class="cn-pill" href="https://outpost.copilotkit.dev">
+                    <span class="cn-dot" style="background: #f97316"></span>outpost
+                </a>
+            </div>
+        </div>
+
+        <!-- ─── Footer ───────────────────────────────────────────────── -->
+        <footer>
+            <div class="container">
+                <div class="footer-brand"><span class="prompt">$</span> sentinel &middot; MIT License</div>
+                <ul class="footer-links">
+                    <li>
+                        <a href="/" rel="noopener">Home</a>
+                    </li>
+                    <li>
+                        <a href="https://github.com/jpr5/sentinel" target="_blank" rel="noopener">Source Code</a>
+                    </li>
+                    <li>
+                        <a href="https://rubygems.org/gems/sentinel-ci" target="_blank" rel="noopener">RubyGems</a>
+                    </li>
+                    <li>
+                        <a href="https://copilotkit.dev" target="_blank" rel="noopener">Built by CopilotKit</a>
+                    </li>
+                </ul>
+            </div>
+        </footer>
+
+        <!-- ─── Scripts ──────────────────────────────────────────────── -->
+        <script>
+            // Raw YAML for the copy button
+            var workflowYaml = [
+                "# .github/workflows/sentinel.yml",
+                "name: Security Scan",
+                "on:",
+                "  pull_request:",
+                "    paths: ['.github/workflows/**']",
+                "  push:",
+                "    branches: [main]",
+                "    paths: ['.github/workflows/**']",
+                "",
+                "permissions:",
+                "  contents: read",
+                "",
+                "jobs:",
+                "  scan:",
+                "    runs-on: ubuntu-latest",
+                "    timeout-minutes: 10",
+                "    steps:",
+                "      - uses: actions/checkout@v4",
+                "        with:",
+                "          persist-credentials: false",
+                "      - uses: jpr5/sentinel@v1",
+                "        with:",
+                "          severity: high",
+            ].join("\n");
+
+            function copyYaml(btn) {
+                navigator.clipboard.writeText(workflowYaml).then(function () {
+                    btn.textContent = "Copied!";
+                    setTimeout(function () {
+                        btn.textContent = "Copy";
+                    }, 2000);
+                });
+            }
+
+            // Scroll-triggered fade-in via IntersectionObserver
+            (function () {
+                var observer = new IntersectionObserver(
+                    function (entries) {
+                        entries.forEach(function (entry) {
+                            if (entry.isIntersecting) {
+                                entry.target.classList.add("visible");
+                                observer.unobserve(entry.target);
+                            }
+                        });
+                    },
+                    { threshold: 0.1, rootMargin: "0px 0px -40px 0px" },
+                );
+
+                document.querySelectorAll(".fade-in").forEach(function (el) {
+                    observer.observe(el);
+                });
+            })();
+        </script>
+    </body>
+</html>
