@@ -39,6 +39,6 @@ jobs:
           PATTERN: ${{ inputs.pattern || 'rotate' }}
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
-          args="--pattern $PATTERN"
+          args="--queue --limit 10 --pattern $PATTERN"
           if [ "$DRY_RUN" = "true" ]; then args="$args --dry-run"; fi
-          ruby bot/scanner_bot.rb $args
+          ruby -Ilib -Ibot bot/scanner_bot.rb $args
