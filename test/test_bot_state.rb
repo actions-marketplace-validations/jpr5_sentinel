@@ -612,4 +612,119 @@ class TestBotState < Minitest::Test
         raw = JSON.parse(File.read(@state_file))
         assert_equal 2, raw["repos"]["owner/repo"]["scans"].length
     end
+
+    # --- Auto-restore from backup tests ---
+
+    def test_auto_restore_triggers_when_state_empty_and_backup_configured
+        # Set up a backup file that the mock Backup.restore will write
+        backup_data = {
+            "repos" => {
+                "owner/backed-up" => {
+                    "scans" => [],
+                    "prs" => [{ "url" => "https://github.com/owner/backed-up/pull/1",
+                                "number" => 1, "rule" => "rule-a", "status" => "open",
+                                "note" => nil, "created_at" => "2025-06-01T00:00:00Z",
+                                "last_updated_at" => "2025-06-01T00:00:00Z", "synced_at" => nil }],
+                    "last_scanned_at" => "2025-06-01T00:00:00Z",
+                    "status" => "scanned"
+                }
+            },
+            "opt_outs" => ["owner/nope"]
+        }
+
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "test-gist-id"
+        ENV["GITHUB_TOKEN"] = "test-token"
+
+        # Stub Backup to write backup_data to the state file when restore is called
+        require_relative "../bot/backup"
+        Bot::Backup.define_method(:restore) do
+            tmp = "#{@state_path}.tmp"
+            File.write(tmp, JSON.pretty_generate(backup_data))
+            File.rename(tmp, @state_path)
+            true
+        end
+
+        state = Bot::State.new(@state_file)
+        assert_equal 1, state.summary[:total_repos]
+        assert_equal 1, state.summary[:total_prs]
+        assert_equal 1, state.summary[:opt_outs]
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+        ENV.delete("GITHUB_TOKEN")
+        # Remove the stub
+        Bot::Backup.define_method(:restore) do
+            Bot::Backup.instance_method(:restore).bind(self).call
+        end rescue nil
+    end
+
+    def test_auto_restore_skipped_when_state_has_repos
+        data = {
+            "repos" => {
+                "owner/existing" => { "scans" => [], "prs" => [], "status" => "scanned",
+                                       "last_scanned_at" => Time.now.utc.iso8601 }
+            },
+            "opt_outs" => []
+        }
+        File.write(@state_file, JSON.pretty_generate(data))
+
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "test-gist-id"
+        ENV["GITHUB_TOKEN"] = "test-token"
+
+        restore_called = false
+        require_relative "../bot/backup"
+        original_restore = Bot::Backup.instance_method(:restore)
+        Bot::Backup.define_method(:restore) do
+            restore_called = true
+            true
+        end
+
+        state = Bot::State.new(@state_file)
+        refute restore_called, "Auto-restore should not trigger when state already has repos"
+        assert_equal 1, state.summary[:total_repos]
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+        ENV.delete("GITHUB_TOKEN")
+        Bot::Backup.define_method(:restore, original_restore) if original_restore
+    end
+
+    def test_auto_restore_skipped_when_no_gist_id
+        # Empty state, but no SENTINEL_BACKUP_GIST_ID
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+        ENV["GITHUB_TOKEN"] = "test-token"
+
+        state = Bot::State.new(@state_file)
+        assert_equal 0, state.summary[:total_repos]
+    ensure
+        ENV.delete("GITHUB_TOKEN")
+    end
+
+    def test_auto_restore_skipped_when_no_github_token
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "test-gist-id"
+        ENV.delete("GITHUB_TOKEN")
+
+        state = Bot::State.new(@state_file)
+        assert_equal 0, state.summary[:total_repos]
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+    end
+
+    def test_auto_restore_failure_is_non_fatal
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "test-gist-id"
+        ENV["GITHUB_TOKEN"] = "test-token"
+
+        require_relative "../bot/backup"
+        Bot::Backup.define_method(:restore) do
+            raise "Simulated network error"
+        end
+
+        # Should not raise, should produce an empty state
+        state = Bot::State.new(@state_file)
+        assert_equal 0, state.summary[:total_repos]
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+        ENV.delete("GITHUB_TOKEN")
+        Bot::Backup.define_method(:restore) do
+            Bot::Backup.instance_method(:restore).bind(self).call
+        end rescue nil
+    end
 end
