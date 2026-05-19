@@ -42,7 +42,7 @@ module Bot
             @queue_mode = queue_mode
             @limit = limit
             @audit = Audit.new
-            @summary = { scanned: 0, findings: 0, prs_opened: 0, queued: 0, skipped: 0, errors: 0 }
+            @summary = { scanned: 0, findings: 0, prs_opened: 0, issues_opened: 0, queued: 0, skipped: 0, errors: 0 }
         end
 
         def run
@@ -235,7 +235,15 @@ module Bot
                 return
             end
 
-            # Build consolidated PR
+            # Route: advisory-only findings create an Issue; fixable findings create a PR
+            if fixed_findings.any?
+                create_fix_pr(repo, fixed_findings, advisory_findings, fixed_files, signoff)
+            else
+                create_advisory_issue(repo, advisory_findings)
+            end
+        end
+
+        def create_fix_pr(repo, fixed_findings, advisory_findings, fixed_files, signoff)
             total = fixed_findings.length + advisory_findings.length
             branch = "sentinel/security-fixes"
             title = "Security: Fix #{total} finding#{"s" if total != 1} in GitHub Actions workflows"
@@ -259,12 +267,13 @@ module Bot
                     repo: repo[:full_name],
                     title: title,
                     body: body,
-                    files: fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files,
+                    files: fixed_files,
                     findings: all_findings,
-                    signoff: signoff
+                    signoff: signoff,
+                    type: "pr"
                 )
                 @queue.save
-                @audit.log("QUEUED", repo: repo[:full_name], details: "title=#{title}")
+                @audit.log("QUEUED", repo: repo[:full_name], details: "type=pr title=#{title}")
                 $stderr.puts "  Queued for review: #{title}"
                 @summary[:queued] += 1
                 return
@@ -277,14 +286,13 @@ module Bot
                 branch: branch,
                 title: title,
                 body: body,
-                files: fixed_files.empty? ? advisory_only_files(advisory_findings) : fixed_files,
+                files: fixed_files,
                 signoff: signoff
             )
 
             if pr
                 @audit.pr_created(repo[:full_name], pr["html_url"])
                 $stderr.puts "  Opened PR: #{pr["html_url"]}"
-                # Record one PR per rule for state tracking
                 (fixed_findings + advisory_findings).map(&:rule).uniq.each do |rule|
                     @state.record_pr(repo[:full_name], pr["html_url"], rule, pr["number"])
                 end
@@ -294,6 +302,95 @@ module Bot
                 $stderr.puts "  Failed to create PR"
                 @summary[:errors] += 1
             end
+        end
+
+        def create_advisory_issue(repo, advisory_findings)
+            count = advisory_findings.length
+            title = "Security: #{count} advisory finding#{"s" if count != 1} in GitHub Actions workflows"
+            body = build_advisory_issue_body(
+                repo: repo[:full_name],
+                advisory_findings: advisory_findings
+            )
+
+            if @dry_run
+                $stderr.puts "  [DRY RUN] Would create advisory issue: #{title}"
+                advisory_findings.each { |f| $stderr.puts "    [advisory] #{f.file}:#{f.line} #{f.rule}" }
+                return
+            end
+
+            if @queue_mode
+                @queue.add(
+                    repo: repo[:full_name],
+                    title: title,
+                    body: body,
+                    files: {},
+                    findings: advisory_findings,
+                    type: "issue"
+                )
+                @queue.save
+                @audit.log("QUEUED", repo: repo[:full_name], details: "type=issue title=#{title}")
+                $stderr.puts "  Queued advisory issue for review: #{title}"
+                @summary[:queued] += 1
+                return
+            end
+
+            repo_token = pr_token_for(repo[:full_name])
+            writer = PrWriter.new(token: repo_token)
+            issue = writer.create_issue(
+                repo: repo[:full_name],
+                title: title,
+                body: body,
+                labels: ["security"]
+            )
+
+            if issue
+                @audit.issue_created(repo[:full_name], issue["html_url"])
+                $stderr.puts "  Opened issue: #{issue["html_url"]}"
+                advisory_findings.map(&:rule).uniq.each do |rule|
+                    @state.record_pr(repo[:full_name], issue["html_url"], rule, issue["number"])
+                end
+                @summary[:issues_opened] += 1
+            else
+                @audit.issue_failed(repo[:full_name], "create_issue_returned_nil")
+                $stderr.puts "  Failed to create advisory issue"
+                @summary[:errors] += 1
+            end
+        end
+
+        def build_advisory_issue_body(repo:, advisory_findings:)
+            opt_out_token = generate_token(repo, "opt-out")
+            encoded_repo = URI.encode_www_form_component(repo)
+            opt_out_url = "#{Config::BOT_URL}/opt-out?repo=#{encoded_repo}&token=#{opt_out_token}"
+
+            rules_hit = advisory_findings.map(&:rule).uniq
+
+            body = "## Security: #{advisory_findings.length} advisory finding#{"s" if advisory_findings.length != 1} "
+            body += "across #{rules_hit.length} rule#{"s" if rules_hit.length != 1}\n\n"
+            body += "These findings require manual review and cannot be auto-fixed.\n\n"
+
+            advisory_findings.group_by(&:rule).each do |rule, findings|
+                body += "### #{rule} — [What is this?](#{Config::BOT_URL}/rules/#{rule})\n\n"
+                findings.each do |f|
+                    body += "- `#{f.file}` line #{f.line}: #{f.message}\n"
+                    body += "  - **Suggested fix:** #{f.fix}\n" if f.fix
+                end
+                body += "\n"
+            end
+
+            body += "### How this was detected\n\n"
+            body += "This finding was identified by deterministic pattern matching — no AI or machine learning "
+            body += "was used in the detection. Sentinel uses static analysis rules that match known-vulnerable "
+            body += "YAML patterns against a database of documented exploit vectors. Every finding maps to a "
+            body += "specific, reproducible pattern. [Source code](https://github.com/jpr5/sentinel) is open for inspection.\n\n"
+
+            body += "---\n"
+            body += "<sub>&#x1f6e1;&#xfe0f; This issue was generated by [Sentinel](https://sentinel.copilotkit.dev), "
+            body += "an open-source security scanner. "
+            body += "[Why this issue?](https://medium.com/@jordanritter/security-hardening-github-workflows-at-scale-d291a33774e1) · "
+            body += "Free, no tracking</sub>\n\n"
+            body += "[&#x1f6ab; Opt out of future notifications](#{opt_out_url})\n"
+
+            body
         end
 
         def build_consolidated_pr_body(repo:, fixed_findings:, advisory_findings:)
@@ -398,6 +495,7 @@ module Bot
             $stderr.puts "  Repos scanned: #{s[:scanned]}"
             $stderr.puts "  Critical findings: #{s[:findings]}"
             $stderr.puts "  PRs opened: #{s[:prs_opened]}"
+            $stderr.puts "  Issues opened: #{s[:issues_opened]}" if s[:issues_opened] > 0
             $stderr.puts "  Queued for review: #{s[:queued]}" if s[:queued] > 0
             $stderr.puts "  Skipped (processed/opted-out): #{s[:skipped]}"
             $stderr.puts "  Errors: #{s[:errors]}"
@@ -518,6 +616,7 @@ if __FILE__ == $0
 
         opts.on("--dry-run", "Don't create PRs, just log what would happen") do
             options[:dry_run] = true
+            options[:explicit_dry_run] = true
         end
 
         opts.on("--queue", "Generate fixes and queue for review (don't submit PRs)") do
@@ -575,6 +674,9 @@ if __FILE__ == $0
         end
     end.parse!
 
+    # Queuing is the safety gate -- disable dry_run unless explicitly passed
+    options[:dry_run] = false if options[:queue] && !options[:explicit_dry_run]
+
     # Queue management commands don't need a GitHub token
     if options[:review]
         queue = Bot::Queue.new
@@ -586,8 +688,9 @@ if __FILE__ == $0
             puts
             pending.each do |item|
                 id_short = item["id"][0, 8]
+                item_type = item["type"] || "pr"
                 findings_summary = item["findings"].map { |f| "  #{f["rule"]}: #{f["file"]}:#{f["line"]}" }
-                puts "[#{id_short}] #{item["repo"]} — #{item["title"]}"
+                puts "[#{id_short}] (#{item_type}) #{item["repo"]} — #{item["title"]}"
                 findings_summary.each { |line| puts line }
                 puts "  Queued: #{item["queued_at"]}"
                 puts
@@ -617,30 +720,54 @@ if __FILE__ == $0
         queue.save
 
         audit = Bot::Audit.new
-        audit.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]}")
+        audit.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]} type=#{item["type"] || "pr"}")
 
         writer = Bot::PrWriter.new(token: token)
-        pr = writer.create_pr(
-            repo: item["repo"],
-            branch: "sentinel/security-fixes",
-            title: item["title"],
-            body: item["body"],
-            files: item["files"],
-            signoff: item["signoff"]
-        )
 
-        if pr
-            audit.pr_created(item["repo"], pr["html_url"])
-            puts "PR created: #{pr["html_url"]}"
-            state = Bot::State.new
-            item["findings"].each do |f|
-                state.record_pr(item["repo"], pr["html_url"], f["rule"], pr["number"])
+        if item["type"] == "issue"
+            issue = writer.create_issue(
+                repo: item["repo"],
+                title: item["title"],
+                body: item["body"],
+                labels: ["security"]
+            )
+
+            if issue
+                audit.issue_created(item["repo"], issue["html_url"])
+                puts "Issue created: #{issue["html_url"]}"
+                state = Bot::State.new
+                item["findings"].each do |f|
+                    state.record_pr(item["repo"], issue["html_url"], f["rule"], issue["number"])
+                end
+                state.save
+            else
+                audit.issue_failed(item["repo"], "create_issue_returned_nil")
+                $stderr.puts "Failed to create issue for #{item["repo"]}"
+                exit 1
             end
-            state.save
         else
-            audit.pr_failed(item["repo"], "create_pr_returned_nil")
-            $stderr.puts "Failed to create PR for #{item["repo"]}"
-            exit 1
+            pr = writer.create_pr(
+                repo: item["repo"],
+                branch: "sentinel/security-fixes",
+                title: item["title"],
+                body: item["body"],
+                files: item["files"],
+                signoff: item["signoff"]
+            )
+
+            if pr
+                audit.pr_created(item["repo"], pr["html_url"])
+                puts "PR created: #{pr["html_url"]}"
+                state = Bot::State.new
+                item["findings"].each do |f|
+                    state.record_pr(item["repo"], pr["html_url"], f["rule"], pr["number"])
+                end
+                state.save
+            else
+                audit.pr_failed(item["repo"], "create_pr_returned_nil")
+                $stderr.puts "Failed to create PR for #{item["repo"]}"
+                exit 1
+            end
         end
         exit 0
     end

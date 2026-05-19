@@ -64,11 +64,13 @@ class StubScanner
 end
 
 class StubPrWriter
-    attr_accessor :created_prs, :pr_response
+    attr_accessor :created_prs, :pr_response, :created_issues, :issue_response
 
     def initialize(token: nil)
         @created_prs = []
         @pr_response = nil
+        @created_issues = []
+        @issue_response = nil
     end
 
     def create_pr(repo:, branch:, title:, body:, files:, signoff: nil)
@@ -77,6 +79,13 @@ class StubPrWriter
             body: body, files: files, signoff: signoff
         }
         @pr_response
+    end
+
+    def create_issue(repo:, title:, body:, labels: [])
+        @created_issues << {
+            repo: repo, title: title, body: body, labels: labels
+        }
+        @issue_response
     end
 end
 
@@ -507,7 +516,7 @@ class TestScannerBotIntegration < Minitest::Test
         bot = build_bot(pattern: "shell-injection", dry_run: false)
 
         # Use a dangerous-triggers finding (critical, not auto-fixable) so it becomes
-        # an advisory finding. The bot will create an advisory-only PR.
+        # an advisory finding. The bot now creates an advisory issue (not a PR).
         finding = make_dangerous_trigger_finding(file: "ci.yml", line: 1)
         @stub_search.candidates = [{ full_name: "owner/pr-repo", stars: 1000 }]
         @stub_scanner.scan_results["owner/pr-repo"] = {
@@ -521,12 +530,12 @@ class TestScannerBotIntegration < Minitest::Test
         # Provide the workflow content so the file grouping loop can fetch it
         @stub_gh_client.file_content_map[["owner/pr-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
 
-        # The PR writer inside scan_and_fix is created fresh (not our @stub_pr_writer),
+        # The PrWriter inside scan_and_fix is created fresh (not our @stub_pr_writer),
         # so we need to stub PrWriter.new to return our controlled stub.
         original_pw_new = Bot::PrWriter.method(:new)
         stub_writer = @stub_pr_writer
-        stub_writer.pr_response = {
-            "html_url" => "https://github.com/owner/pr-repo/pull/42",
+        stub_writer.issue_response = {
+            "html_url" => "https://github.com/owner/pr-repo/issues/42",
             "number" => 42,
         }
         Bot::PrWriter.define_singleton_method(:new) { |**kwargs| stub_writer }
@@ -553,10 +562,188 @@ class TestScannerBotIntegration < Minitest::Test
                 "record_pr should be called with exactly 4 arguments (repo, url, rule, number)"
             repo_name, url, rule, number = call_args
             assert_equal "owner/pr-repo", repo_name
-            assert_equal "https://github.com/owner/pr-repo/pull/42", url
+            assert_equal "https://github.com/owner/pr-repo/issues/42", url
             assert_kind_of String, rule, "rule should be a String"
-            assert_equal 42, number, "number should be the PR number"
+            assert_equal 42, number, "number should be the issue number"
         end
+    end
+
+    # ========================================================================
+    # Test 11: Advisory-only findings create issues, not PRs
+    # ========================================================================
+
+    def test_advisory_only_creates_issue_not_pr
+        bot = build_bot(pattern: "shell-injection", dry_run: false)
+
+        finding = make_dangerous_trigger_finding(file: "ci.yml", line: 1)
+        @stub_search.candidates = [{ full_name: "owner/advisory-repo", stars: 1000 }]
+        @stub_scanner.scan_results["owner/advisory-repo"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["owner/advisory-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["owner/advisory-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        original_pw_new = Bot::PrWriter.method(:new)
+        stub_writer = @stub_pr_writer
+        stub_writer.issue_response = {
+            "html_url" => "https://github.com/owner/advisory-repo/issues/7",
+            "number" => 7,
+        }
+        Bot::PrWriter.define_singleton_method(:new) { |**kwargs| stub_writer }
+
+        _output = capture_io { bot.run }
+
+        Bot::PrWriter.define_singleton_method(:new) { |**kwargs| original_pw_new.call(**kwargs) }
+
+        # Issue should have been created, NOT a PR
+        assert_empty stub_writer.created_prs, "No PRs should be created for advisory-only findings"
+        assert_equal 1, stub_writer.created_issues.length, "One issue should be created"
+
+        issue = stub_writer.created_issues.first
+        assert_equal "owner/advisory-repo", issue[:repo]
+        assert_match(/advisory finding/, issue[:title])
+        assert_includes issue[:labels], "security"
+
+        summary = bot.instance_variable_get(:@summary)
+        assert_equal 1, summary[:issues_opened], "issues_opened should be 1"
+        assert_equal 0, summary[:prs_opened], "prs_opened should be 0"
+
+        # Check audit log
+        log_content = File.read(@audit_file)
+        assert_match(/ISSUE_CREATED.*advisory-repo/, log_content)
+    end
+
+    # ========================================================================
+    # Test 12: Advisory-only dry run logs issue intent
+    # ========================================================================
+
+    def test_advisory_only_dry_run_logs_issue
+        bot = build_bot(pattern: "shell-injection", dry_run: true)
+
+        finding = make_dangerous_trigger_finding(file: "ci.yml", line: 1)
+        @stub_search.candidates = [{ full_name: "owner/dry-repo", stars: 500 }]
+        @stub_scanner.scan_results["owner/dry-repo"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["owner/dry-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["owner/dry-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        captured = capture_io { bot.run }
+        stderr_output = captured[1]
+
+        assert_match(/\[DRY RUN\] Would create advisory issue/, stderr_output,
+            "Dry run should log advisory issue creation intent")
+        assert_match(/\[advisory\]/, stderr_output,
+            "Dry run should list advisory findings")
+    end
+
+    # ========================================================================
+    # Test 13: Advisory-only queue mode marks type as issue
+    # ========================================================================
+
+    def test_advisory_only_queue_mode_marks_type_issue
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        finding = make_dangerous_trigger_finding(file: "ci.yml", line: 1)
+        @stub_search.candidates = [{ full_name: "owner/queue-repo", stars: 500 }]
+        @stub_scanner.scan_results["owner/queue-repo"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["owner/queue-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["owner/queue-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        _output = capture_io { bot.run }
+
+        queue = bot.instance_variable_get(:@queue)
+        pending = queue.pending
+        assert_equal 1, pending.length
+        assert_equal "issue", pending.first["type"],
+            "Advisory-only queue entries should have type 'issue'"
+    end
+
+    # ========================================================================
+    # Test 14: Mixed findings (fixed + advisory) still create PRs
+    # ========================================================================
+
+    def test_mixed_findings_create_pr_not_issue
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        fixed_finding = make_shell_injection_finding(line: 12)
+        advisory_finding = make_dangerous_trigger_finding(file: "ci.yml", line: 1)
+        @stub_search.candidates = [{ full_name: "owner/mixed-repo", stars: 1000 }]
+        @stub_scanner.scan_results["owner/mixed-repo"] = {
+            findings: [fixed_finding, advisory_finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["owner/mixed-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["owner/mixed-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        _output = capture_io { bot.run }
+
+        queue = bot.instance_variable_get(:@queue)
+        pending = queue.pending
+        assert_equal 1, pending.length
+        assert_equal "pr", pending.first["type"],
+            "Mixed findings (fixed + advisory) should queue as PR type"
+    end
+
+    # ========================================================================
+    # Test 15: Advisory issue body format
+    # ========================================================================
+
+    def test_advisory_issue_body_format
+        bot = build_bot(pattern: "shell-injection", dry_run: false)
+
+        finding = make_dangerous_trigger_finding(file: "ci.yml", line: 1)
+        @stub_search.candidates = [{ full_name: "owner/body-repo", stars: 500 }]
+        @stub_scanner.scan_results["owner/body-repo"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["owner/body-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["owner/body-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        original_pw_new = Bot::PrWriter.method(:new)
+        stub_writer = @stub_pr_writer
+        stub_writer.issue_response = {
+            "html_url" => "https://github.com/owner/body-repo/issues/1",
+            "number" => 1,
+        }
+        Bot::PrWriter.define_singleton_method(:new) { |**kwargs| stub_writer }
+
+        _output = capture_io { bot.run }
+
+        Bot::PrWriter.define_singleton_method(:new) { |**kwargs| original_pw_new.call(**kwargs) }
+
+        issue = stub_writer.created_issues.first
+        body = issue[:body]
+
+        assert_match(/advisory finding/, body, "Body should mention advisory findings")
+        assert_match(/manual review/, body, "Body should mention manual review")
+        assert_match(/How this was detected/, body, "Body should have detection section")
+        assert_match(/Opt out/, body, "Body should have opt-out link")
+        refute_match(/Add Sentinel to this repo/, body,
+            "Advisory issues should NOT have adopt link")
+        assert_match(/This issue was generated by/, body,
+            "Body should say 'issue' not 'PR'")
     end
 
     # ========================================================================

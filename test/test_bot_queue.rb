@@ -267,4 +267,31 @@ class TestBotQueue < Minitest::Test
         ids = queue.pending.map { |i| i["id"] }
         assert_equal ids.uniq, ids, "Each queue item should have a unique ID"
     end
+
+    def test_add_defaults_type_to_pr
+        queue = Bot::Queue.new(@queue_file)
+        queue.add(repo: "owner/repo", title: "t", body: "b", files: {}, findings: [])
+
+        item = queue.pending.first
+        assert_equal "pr", item["type"], "Default type should be 'pr'"
+    end
+
+    def test_add_stores_issue_type
+        queue = Bot::Queue.new(@queue_file)
+        queue.add(repo: "owner/repo", title: "t", body: "b", files: {}, findings: [], type: "issue")
+
+        item = queue.pending.first
+        assert_equal "issue", item["type"], "Should store type 'issue'"
+    end
+
+    def test_type_field_persists_through_save_reload
+        queue = Bot::Queue.new(@queue_file)
+        queue.add(repo: "owner/repo1", title: "t", body: "b", files: {}, findings: [], type: "issue")
+        queue.add(repo: "owner/repo2", title: "t", body: "b", files: {}, findings: [], type: "pr")
+        queue.save
+
+        reloaded = Bot::Queue.new(@queue_file)
+        assert_equal "issue", reloaded.pending[0]["type"]
+        assert_equal "pr", reloaded.pending[1]["type"]
+    end
 end

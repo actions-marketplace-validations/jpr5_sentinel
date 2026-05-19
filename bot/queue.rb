@@ -15,7 +15,7 @@ module Bot
             File.rename(tmp, @path)
         end
 
-        def add(repo:, title:, body:, files:, findings:, signoff: nil)
+        def add(repo:, title:, body:, files:, findings:, signoff: nil, type: "pr")
             @data["pending"] << {
                 "id" => SecureRandom.uuid,
                 "repo" => repo,
@@ -30,6 +30,7 @@ module Bot
                     end
                 },
                 "signoff" => signoff,
+                "type" => type,
                 "queued_at" => Time.now.utc.iso8601,
             }
         end
