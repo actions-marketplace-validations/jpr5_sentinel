@@ -58,16 +58,22 @@ class TestBotBootstrap < Minitest::Test
     end
 
     # Helper: build a search result item (issue/PR from search API)
-    def search_item(repo:, number:, state: "open", merged_at: nil, title: "Security: Fix findings")
+    # Includes body and head ref fields that the post-filter checks.
+    def search_item(repo:, number:, state: "open", merged_at: nil,
+                    title: "Security: Fix 3 findings in GitHub Actions workflows",
+                    body: "Automated fixes from Sentinel Bot\nhttps://sentinel.copilotkit.dev",
+                    head_ref: "sentinel/security-fixes")
         {
             "html_url" => "https://github.com/#{repo}/pull/#{number}",
             "number" => number,
             "title" => title,
+            "body" => body,
             "state" => state,
             "created_at" => "2026-05-01T00:00:00Z",
             "updated_at" => "2026-05-10T00:00:00Z",
             "pull_request" => {
                 "merged_at" => merged_at,
+                "head" => { "ref" => head_ref },
             },
         }
     end
@@ -461,7 +467,98 @@ class TestBotBootstrap < Minitest::Test
     end
 
     # -------------------------------------------------------
-    # Test 13: Mixed scenario — some tracked, some new
+    # Test 13: Post-filter rejects non-Sentinel PRs from search results
+    # -------------------------------------------------------
+    def test_post_filter_rejects_non_sentinel_prs
+        state = BootstrapStubState.new
+
+        # A real Sentinel PR (has sentinel branch + body markers)
+        sentinel_pr = search_item(
+            repo: "CopilotKit/CopilotKit", number: 50, state: "open",
+            title: "Security: Fix 3 findings in GitHub Actions workflows",
+            body: "Automated fixes from Sentinel Bot\nhttps://sentinel.copilotkit.dev",
+            head_ref: "sentinel/security-fixes",
+        )
+
+        # A non-Sentinel PR that happened to match the old broad search
+        # (e.g. a manual CI hardening PR with "Security:" in the title)
+        non_sentinel_pr = search_item(
+            repo: "CopilotKit/CopilotKit", number: 99, state: "open",
+            title: "Security: harden CI pipeline permissions",
+            body: "Manual hardening of workflow permissions.",
+            head_ref: "fix/ci-permissions",
+        )
+
+        bootstrap = make_bootstrap(state: state) do |path|
+            dp = URI.decode_www_form_component(path)
+            if dp.include?("org:CopilotKit")
+                { "total_count" => 2, "items" => [sentinel_pr, non_sentinel_pr] }
+            elsif dp.include?("org:ag-ui-protocol")
+                { "total_count" => 0, "items" => [] }
+            else
+                nil
+            end
+        end
+
+        result = bootstrap.run
+        assert_equal 1, result[:found], "Non-Sentinel PR should be filtered out"
+        assert_equal 1, result[:new]
+        assert_equal "CopilotKit/CopilotKit", state.recorded_prs.first[:repo]
+        assert_equal 50, state.recorded_prs.first[:number]
+    end
+
+    # -------------------------------------------------------
+    # Test 14: Post-filter accepts PRs matching different Sentinel signals
+    # -------------------------------------------------------
+    def test_post_filter_accepts_various_sentinel_signals
+        state = BootstrapStubState.new
+
+        # PR matched by head branch only
+        by_branch = search_item(
+            repo: "CopilotKit/CopilotKit", number: 10, state: "open",
+            title: "Something unusual", body: "No sentinel keywords here.",
+            head_ref: "sentinel/add-security-scan",
+        )
+
+        # PR matched by body containing sentinel.copilotkit.dev
+        by_body_url = search_item(
+            repo: "CopilotKit/CopilotKit", number: 20, state: "open",
+            title: "Something else", body: "See https://sentinel.copilotkit.dev/report",
+            head_ref: "some-other-branch",
+        )
+
+        # PR matched by title pattern
+        by_title = search_item(
+            repo: "CopilotKit/CopilotKit", number: 30, state: "open",
+            title: "Security: Fix 5 findings in GitHub Actions workflows",
+            body: "No other markers.", head_ref: "random-branch",
+        )
+
+        # PR matched by "Add Sentinel CI/CD" title
+        by_adoption_title = search_item(
+            repo: "CopilotKit/CopilotKit", number: 40, state: "open",
+            title: "Add Sentinel CI/CD security scanning",
+            body: "No other markers.", head_ref: "random-branch-2",
+        )
+
+        bootstrap = make_bootstrap(state: state) do |path|
+            dp = URI.decode_www_form_component(path)
+            if dp.include?("org:CopilotKit")
+                { "total_count" => 4, "items" => [by_branch, by_body_url, by_title, by_adoption_title] }
+            elsif dp.include?("org:ag-ui-protocol")
+                { "total_count" => 0, "items" => [] }
+            else
+                nil
+            end
+        end
+
+        result = bootstrap.run
+        assert_equal 4, result[:found], "All four Sentinel signal types should pass the filter"
+        assert_equal 4, result[:new]
+    end
+
+    # -------------------------------------------------------
+    # Test 15: Mixed scenario — some tracked, some new
     # -------------------------------------------------------
     def test_mixed_tracked_and_new
         existing_pr = {

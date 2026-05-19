@@ -74,16 +74,17 @@ module Bot
 
         # Search an org for PRs that look like Sentinel PRs.
         # Uses two search strategies:
-        #   1. PRs with "Security:" in the title (the bot's standard title pattern)
-        #   2. PRs with "Add Sentinel" in the title (the scan-addition pattern)
+        #   1. PRs with "Security: Fix" + "finding" + "Sentinel" (the bot's fix-PR pattern)
+        #   2. PRs with "Add Sentinel CI/CD" in the title (the scan-addition pattern)
+        # Results are post-filtered in parse_search_result to validate Sentinel origin.
         # Returns nil if all searches fail (API errors), empty array if no results.
         def search_org_for_sentinel_prs(org)
             prs = []
             any_succeeded = false
 
             search_queries = [
-                "is:pr \"Security:\" author:jpr5 org:#{org}",
-                "is:pr \"Add Sentinel\" author:jpr5 org:#{org}",
+                "is:pr \"Security: Fix\" \"finding\" \"Sentinel\" org:#{org}",
+                "is:pr \"Add Sentinel CI/CD\" org:#{org}",
             ]
 
             search_queries.each do |query|
@@ -162,6 +163,20 @@ module Bot
             # Search API returns issues, so we need to extract repo from the URL
             html_url = item["html_url"] || ""
             return nil unless html_url =~ %r{github\.com/([^/]+/[^/]+)/pull/(\d+)}
+
+            # Post-filter: validate this actually looks like a Sentinel PR
+            body = item["body"] || ""
+            title = item["title"] || ""
+            head_ref = item.dig("pull_request", "head", "ref") || ""
+
+            is_sentinel = head_ref.start_with?("sentinel/") ||
+                          body.include?("sentinel.copilotkit.dev") ||
+                          body.include?("sentinel-ci-scanner") ||
+                          body.include?("Sentinel Bot") ||
+                          title.match?(/\ASecurity: Fix \d+ finding/) ||
+                          title.match?(/\AAdd Sentinel CI\/CD/)
+
+            return nil unless is_sentinel
 
             repo = $1
             number = $2.to_i
