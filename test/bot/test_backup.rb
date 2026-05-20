@@ -203,13 +203,25 @@ class TestBotBackup < Minitest::Test
     end
 
     def test_default_queue_path_derives_from_state_path
+        ENV.delete("SENTINEL_QUEUE_PATH")
         backup = Bot::Backup.new(token: @token, state_path: "/some/dir/state.json")
         assert_equal "/some/dir/queue.json", backup.instance_variable_get(:@queue_path)
     end
 
-    def test_explicit_queue_path_overrides_default
+    def test_queue_path_from_env_overrides_derived_default
+        ENV["SENTINEL_QUEUE_PATH"] = "/env/path/queue.json"
+        backup = Bot::Backup.new(token: @token, state_path: "/some/dir/state.json")
+        assert_equal "/env/path/queue.json", backup.instance_variable_get(:@queue_path)
+    ensure
+        ENV.delete("SENTINEL_QUEUE_PATH")
+    end
+
+    def test_explicit_queue_path_overrides_env_and_default
+        ENV["SENTINEL_QUEUE_PATH"] = "/env/path/queue.json"
         backup = Bot::Backup.new(token: @token, state_path: "/some/dir/state.json", queue_path: "/other/queue.json")
         assert_equal "/other/queue.json", backup.instance_variable_get(:@queue_path)
+    ensure
+        ENV.delete("SENTINEL_QUEUE_PATH")
     end
 
     def test_save_fails_when_no_files_exist

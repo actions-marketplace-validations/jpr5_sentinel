@@ -16,7 +16,7 @@ module Bot
         def initialize(token:, state_path: Config::STATE_FILE, queue_path: nil)
             @token = token
             @state_path = state_path
-            @queue_path = queue_path || File.join(File.dirname(state_path), "queue.json")
+            @queue_path = queue_path || ENV["SENTINEL_QUEUE_PATH"] || File.join(File.dirname(state_path), "queue.json")
             @gist_id = ENV["SENTINEL_BACKUP_GIST_ID"]
         end
 
