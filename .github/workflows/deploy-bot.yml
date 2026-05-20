@@ -12,7 +12,7 @@ permissions:
   packages: write
 
 env:
-  RAILWAY_ENV_ID: "0ee31ecd-3d59-4791-a04a-3f106d82cd85"
+  RAILWAY_ENV_ID: "7dafda2c-aa94-453b-af8c-06cef87895a9"
 
 jobs:
   build-and-deploy:
@@ -25,11 +25,11 @@ jobs:
           - name: sentinel-bot
             image: sentinel-bot
             dockerfile: bot/Dockerfile
-            railway_id: "d3dc2005-752e-49ce-b8dc-25f492f4ac22"
+            railway_id: "e66e43f7-9a07-4a60-908f-096e6b7bfbf1"
           - name: sentinel-web
             image: sentinel-web
             dockerfile: bot/Dockerfile.web
-            railway_id: "7c3c2d5a-3ff5-4e15-b657-9803ac320f18"
+            railway_id: "68aa0cee-5100-4ced-82d6-f11feb53140d"
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -58,7 +58,7 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SERVICE_ID: ${{ matrix.service.railway_id }}
           ENV_ID: ${{ env.RAILWAY_ENV_ID }}
-          PROJECT_ID: "60cc49ff-cdbb-4c5b-9c55-6b3d2391f93d"
+          PROJECT_ID: "570b2f3f-69dd-4f55-999a-9c72ecec00b1"
         run: |
           # Env var change triggers a fresh deploy that re-pulls the image.
           # serviceInstanceRedeploy does NOT re-pull — it reuses cached image.
