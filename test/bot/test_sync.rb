@@ -153,6 +153,7 @@ class TestBotSync < Minitest::Test
                 { name: "lint", conclusion: "success" },
                 { name: "test", conclusion: "success" },
             ]),
+            "/repos/owner/repo/pulls/300/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -174,6 +175,7 @@ class TestBotSync < Minitest::Test
                 { user: "AlemTuzlak", state: "CHANGES_REQUESTED" },
             ]),
             "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/400/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -196,6 +198,7 @@ class TestBotSync < Minitest::Test
                 { name: "lint", conclusion: "failure" },
                 { name: "test", conclusion: "success" },
             ]),
+            "/repos/owner/repo/pulls/500/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -218,6 +221,7 @@ class TestBotSync < Minitest::Test
                 { name: "DCO", conclusion: "failure" },
                 { name: "test", conclusion: "success" },
             ]),
+            "/repos/cncf/toc/pulls/600/comments" => [],
         })
 
         result = sync.sync_pr("cncf/toc", pr)
@@ -241,6 +245,7 @@ class TestBotSync < Minitest::Test
             "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response([
                 { name: "lint", conclusion: "failure" },
             ]),
+            "/repos/owner/repo/pulls/700/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -286,6 +291,7 @@ class TestBotSync < Minitest::Test
             "/repos/owner/repo/pulls/901" => pr_response(number: 901),
             "/repos/owner/repo/pulls/901/reviews" => reviews_response,
             "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/901/comments" => [],
         })
 
         results = sync.sync_all
@@ -309,6 +315,7 @@ class TestBotSync < Minitest::Test
             "/repos/owner/repo/pulls/901" => pr_response(number: 901, head_sha: "sha901"),
             "/repos/owner/repo/pulls/901/reviews" => reviews_response,
             "/repos/owner/repo/commits/sha901/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/901/comments" => [],
         })
 
         results = sync.sync_all(force: true)
@@ -332,6 +339,7 @@ class TestBotSync < Minitest::Test
                 { user: "reviewer1", state: "APPROVED" },  # Later approval supersedes
             ]),
             "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1000/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -348,6 +356,7 @@ class TestBotSync < Minitest::Test
             "/repos/owner/repo/pulls/1100" => pr_response(number: 1100, state: "open"),
             "/repos/owner/repo/pulls/1100/reviews" => reviews_response,
             "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1100/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -398,6 +407,7 @@ class TestBotSync < Minitest::Test
             "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response([
                 { name: "CLA Check", conclusion: "failure" },
             ]),
+            "/repos/owner/repo/pulls/1400/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -414,6 +424,7 @@ class TestBotSync < Minitest::Test
             "/repos/owner/repo/pulls/1500" => pr_response(number: 1500),
             "/repos/owner/repo/pulls/1500/reviews" => nil,  # API error
             "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1500/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -429,6 +440,7 @@ class TestBotSync < Minitest::Test
             "/repos/owner/repo/pulls/1600" => pr_response(number: 1600),
             "/repos/owner/repo/pulls/1600/reviews" => reviews_response,
             "/repos/owner/repo/commits/abc123/check-runs" => nil,  # API error
+            "/repos/owner/repo/pulls/1600/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -451,6 +463,7 @@ class TestBotSync < Minitest::Test
             ),
             "/repos/owner/repo/pulls/1700/reviews" => reviews_response,
             "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1700/comments" => [],
         })
 
         result = sync.sync_pr("owner/repo", pr)
@@ -459,5 +472,269 @@ class TestBotSync < Minitest::Test
         update = state.updates.first
         assert_equal "2026-05-01T12:00:00Z", update[:created_at]
         assert_equal "2026-05-15T18:30:00Z", update[:updated_at]
+    end
+
+    # -------------------------------------------------------
+    # Bot reviewer detection tests
+    # -------------------------------------------------------
+
+    def test_bot_reviewer_detects_bot_suffix
+        sync = Bot::Sync.new(token: @token, state: StubState.new)
+        assert sync.send(:bot_reviewer?, "codex[bot]"), "Should detect [bot] suffix"
+        assert sync.send(:bot_reviewer?, "some-new-bot[bot]"), "Should detect arbitrary [bot] suffix"
+        assert sync.send(:bot_reviewer?, "Codex[bot]"), "Should be case-insensitive"
+    end
+
+    def test_bot_reviewer_detects_known_accounts
+        sync = Bot::Sync.new(token: @token, state: StubState.new)
+        assert sync.send(:bot_reviewer?, "github-actions[bot]"), "Should detect github-actions[bot]"
+        assert sync.send(:bot_reviewer?, "dependabot[bot]"), "Should detect dependabot[bot]"
+        assert sync.send(:bot_reviewer?, "snyk-bot"), "Should detect snyk-bot"
+        assert sync.send(:bot_reviewer?, "renovate[bot]"), "Should detect renovate[bot]"
+        assert sync.send(:bot_reviewer?, "copilot[bot]"), "Should detect copilot[bot]"
+    end
+
+    def test_bot_reviewer_rejects_human_users
+        sync = Bot::Sync.new(token: @token, state: StubState.new)
+        refute sync.send(:bot_reviewer?, "AlemTuzlak"), "Human reviewer should not be detected as bot"
+        refute sync.send(:bot_reviewer?, "jpr5"), "Human reviewer should not be detected as bot"
+        refute sync.send(:bot_reviewer?, "octocat"), "Human reviewer should not be detected as bot"
+    end
+
+    def test_bot_reviewer_handles_nil_and_empty
+        sync = Bot::Sync.new(token: @token, state: StubState.new)
+        refute sync.send(:bot_reviewer?, nil), "nil should not be detected as bot"
+        refute sync.send(:bot_reviewer?, ""), "empty string should not be detected as bot"
+    end
+
+    # -------------------------------------------------------
+    # Bot review filtering in status derivation
+    # -------------------------------------------------------
+
+    def test_bot_changes_requested_does_not_block
+        pr = make_pr(number: 1800)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1800" => pr_response(number: 1800),
+            "/repos/owner/repo/pulls/1800/reviews" => reviews_response([
+                { user: "codex[bot]", state: "CHANGES_REQUESTED" },
+            ]),
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1800/comments" => [],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+        assert_nil state.updates.first[:note], "Bot CHANGES_REQUESTED should not produce a blocker note"
+    end
+
+    def test_codex_bot_changes_requested_ignored_while_human_blocks
+        pr = make_pr(number: 1801)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1801" => pr_response(number: 1801),
+            "/repos/owner/repo/pulls/1801/reviews" => reviews_response([
+                { user: "codex[bot]", state: "CHANGES_REQUESTED" },
+                { user: "real-reviewer", state: "CHANGES_REQUESTED" },
+            ]),
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1801/comments" => [],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "blocked", result
+        note = state.updates.first[:note]
+        assert_includes note, "Changes requested by @real-reviewer"
+        refute_includes note, "codex[bot]", "Bot review should not appear in blockers"
+    end
+
+    def test_multiple_bot_reviews_all_filtered
+        pr = make_pr(number: 1802)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1802" => pr_response(number: 1802),
+            "/repos/owner/repo/pulls/1802/reviews" => reviews_response([
+                { user: "codex[bot]", state: "CHANGES_REQUESTED" },
+                { user: "github-actions[bot]", state: "CHANGES_REQUESTED" },
+                { user: "dependabot[bot]", state: "CHANGES_REQUESTED" },
+            ]),
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1802/comments" => [],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+        # No human blockers, so no blocker note
+    end
+
+    def test_bot_approved_review_also_filtered
+        pr = make_pr(number: 1803)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        # Bot approves, then human requests changes — only human matters
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1803" => pr_response(number: 1803),
+            "/repos/owner/repo/pulls/1803/reviews" => reviews_response([
+                { user: "codex[bot]", state: "APPROVED" },
+                { user: "real-reviewer", state: "CHANGES_REQUESTED" },
+            ]),
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1803/comments" => [],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "blocked", result
+        assert_includes state.updates.first[:note], "Changes requested by @real-reviewer"
+    end
+
+    # -------------------------------------------------------
+    # Bot review comment detection
+    # -------------------------------------------------------
+
+    def test_bot_review_comments_noted_but_dont_block
+        pr = make_pr(number: 1900)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1900" => pr_response(number: 1900),
+            "/repos/owner/repo/pulls/1900/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1900/comments" => [
+                { "user" => { "login" => "codex[bot]" }, "body" => "This looks wrong" },
+                { "user" => { "login" => "codex[bot]" }, "body" => "Another suggestion" },
+            ],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result, "Bot review comments should not block"
+        note = state.updates.first[:note]
+        assert_includes note, "2 bot review comments from @codex[bot] (ignored)"
+    end
+
+    def test_single_bot_review_comment_singular_form
+        pr = make_pr(number: 1901)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1901" => pr_response(number: 1901),
+            "/repos/owner/repo/pulls/1901/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1901/comments" => [
+                { "user" => { "login" => "copilot[bot]" }, "body" => "Suggestion here" },
+            ],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+        note = state.updates.first[:note]
+        assert_includes note, "1 bot review comment from @copilot[bot] (ignored)"
+    end
+
+    def test_multiple_different_bots_each_noted
+        pr = make_pr(number: 1902)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1902" => pr_response(number: 1902),
+            "/repos/owner/repo/pulls/1902/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1902/comments" => [
+                { "user" => { "login" => "codex[bot]" }, "body" => "Issue 1" },
+                { "user" => { "login" => "copilot[bot]" }, "body" => "Issue 2" },
+                { "user" => { "login" => "codex[bot]" }, "body" => "Issue 3" },
+            ],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+        note = state.updates.first[:note]
+        assert_includes note, "codex[bot]"
+        assert_includes note, "copilot[bot]"
+    end
+
+    def test_human_review_comments_not_flagged
+        pr = make_pr(number: 1903)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1903" => pr_response(number: 1903),
+            "/repos/owner/repo/pulls/1903/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1903/comments" => [
+                { "user" => { "login" => "real-human" }, "body" => "Good work!" },
+            ],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+        assert_nil state.updates.first[:note], "Human comments should not generate notes"
+    end
+
+    def test_no_review_comments_clean_open
+        pr = make_pr(number: 1904)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1904" => pr_response(number: 1904),
+            "/repos/owner/repo/pulls/1904/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1904/comments" => [],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+        assert_nil state.updates.first[:note]
+    end
+
+    def test_bot_comments_and_real_blocker_combined_in_note
+        pr = make_pr(number: 1905)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1905" => pr_response(number: 1905),
+            "/repos/owner/repo/pulls/1905/reviews" => reviews_response([
+                { user: "real-maintainer", state: "CHANGES_REQUESTED" },
+            ]),
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1905/comments" => [
+                { "user" => { "login" => "codex[bot]" }, "body" => "False positive" },
+            ],
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "blocked", result
+        note = state.updates.first[:note]
+        assert_includes note, "Changes requested by @real-maintainer"
+        assert_includes note, "1 bot review comment from @codex[bot] (ignored)"
+    end
+
+    def test_comments_api_nil_handled_gracefully
+        pr = make_pr(number: 1906)
+        state = StubState.new([{ repo: "owner/repo", pr: pr }])
+        sync = Bot::Sync.new(token: @token, state: state)
+
+        stub_api(sync, {
+            "/repos/owner/repo/pulls/1906" => pr_response(number: 1906),
+            "/repos/owner/repo/pulls/1906/reviews" => reviews_response,
+            "/repos/owner/repo/commits/abc123/check-runs" => check_runs_response,
+            "/repos/owner/repo/pulls/1906/comments" => nil,
+        })
+
+        result = sync.sync_pr("owner/repo", pr)
+        assert_equal "open", result
+        assert_nil state.updates.first[:note]
     end
 end

@@ -9,6 +9,28 @@ module Bot
 
         TERMINAL_STATUSES = %w[merged].freeze
 
+        # Known bot account suffixes and exact names that produce false-positive reviews
+        BOT_SUFFIX = "[bot]".freeze
+        KNOWN_BOT_ACCOUNTS = %w[
+            github-actions[bot]
+            dependabot[bot]
+            codex[bot]
+            copilot[bot]
+            renovate[bot]
+            mergify[bot]
+            codecov[bot]
+            sonarcloud[bot]
+            allcontributors[bot]
+            stale[bot]
+            snyk-bot
+            whitesource-bolt-for-github[bot]
+            depfu[bot]
+            greenkeeper[bot]
+            imgbot[bot]
+            netlify[bot]
+            vercel[bot]
+        ].freeze
+
         def initialize(token:, state:)
             @token = token
             @state = state
@@ -90,8 +112,9 @@ module Bot
 
             # PR is open — check for blockers
             blockers = []
+            info_notes = []
 
-            # Check reviews for changes_requested
+            # Check reviews for changes_requested (bot reviews are filtered out)
             review_blockers = check_reviews(owner, name, number)
             blockers.concat(review_blockers)
 
@@ -102,9 +125,18 @@ module Bot
                 blockers.concat(ci_blockers)
             end
 
+            # Check for bot review comments (informational, never blocks)
+            bot_notes = check_bot_review_comments(owner, name, number)
+            info_notes.concat(bot_notes)
+
             if blockers.any?
-                note = blockers.join("; ")
+                all_notes = blockers + info_notes
+                note = all_notes.join("; ")
                 return ["blocked", note]
+            end
+
+            if info_notes.any?
+                return ["open", info_notes.join("; ")]
             end
 
             ["open", nil]
@@ -123,6 +155,9 @@ module Bot
                 state = review["state"]
                 next unless user && state
 
+                # Skip bot reviewers entirely — their reviews are noise on Sentinel PRs
+                next if bot_reviewer?(user)
+
                 # Only state-changing reviews matter; COMMENTED/PENDING don't clear prior decisions
                 next if state == "COMMENTED" || state == "PENDING"
 
@@ -138,6 +173,38 @@ module Bot
             end
 
             blockers
+        end
+
+        # Fetch review comments on a PR and identify bot-authored ones.
+        # Returns an array of informational notes (not blockers) about bot comments found.
+        def check_bot_review_comments(owner, name, number)
+            notes = []
+
+            comments = api_get("/repos/#{owner}/#{name}/pulls/#{number}/comments?per_page=100")
+            return notes unless comments.is_a?(Array)
+
+            bot_comments = comments.select { |c| bot_reviewer?(c.dig("user", "login")) }
+            return notes if bot_comments.empty?
+
+            # Group by bot user for concise reporting
+            by_bot = bot_comments.group_by { |c| c.dig("user", "login") }
+            by_bot.each do |bot_user, bot_user_comments|
+                notes << "#{bot_user_comments.length} bot review comment#{"s" if bot_user_comments.length != 1} from @#{bot_user} (ignored)"
+            end
+
+            notes
+        end
+
+        def bot_reviewer?(username)
+            return false if username.nil? || username.empty?
+
+            # Check exact match against known bot accounts
+            return true if KNOWN_BOT_ACCOUNTS.include?(username.downcase)
+
+            # Check for [bot] suffix (catches any GitHub App bot)
+            return true if username.downcase.end_with?(BOT_SUFFIX)
+
+            false
         end
 
         def check_ci(owner, name, sha)
