@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: ruby/setup-ruby@97ecb7b512899eb71ab1bf2310a624c6f1589ac6 # v1.308.0
+      - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
         with:
           ruby-version: '3.3'
 
@@ -84,12 +84,12 @@ jobs:
         run: |
           git config --local url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-      - uses: ruby/setup-ruby@97ecb7b512899eb71ab1bf2310a624c6f1589ac6 # v1.308.0
+      - uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
         with:
           ruby-version: '3.3'
           bundler-cache: true
 
-      - uses: rubygems/release-gem@f0d7faff26625599a847d40d9fa28ace24c2aacc # v1
+      - uses: rubygems/release-gem@6317d8d1f7e28c24d28f6eff169ea854948bd9f7 # v1.2.0
 
       - name: Update major version tag
         env:
