@@ -3,6 +3,7 @@
 require "sinatra"
 require "json"
 require "time"
+require "uri"
 require_relative "audit"
 require_relative "config"
 require_relative "github_app_auth"
@@ -260,10 +261,7 @@ post "/opt-out" do
     state.record_opt_out(repo)
     state.save
 
-    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-        require_relative "backup"
-        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
-    end
+    safe_backup
 
     AUDIT.opt_out(repo)
     consume_token(token)
@@ -809,10 +807,7 @@ post "/queue/:id/approve" do
     item = queue.approve(match["id"])
     queue.save
 
-    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-        require_relative "backup"
-        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
-    end
+    safe_backup
 
     # Determine effective body, files, and type for this approval.
     # When findings have been curated (some removed), regenerate the body
@@ -947,14 +942,11 @@ post "/queue/:id/reject" do
     item = queue.reject(match["id"], reason: reason)
     queue.save
 
-    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-        require_relative "backup"
-        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
-    end
+    safe_backup
 
     AUDIT.log("QUEUE_REJECT", repo: item["repo"], details: "id=#{match["id"][0, 8]} reason=#{reason || 'none'} via=web")
 
-    redirect "/queue?flash=Rejected: #{item["repo"]} — #{item["title"]}"
+    redirect "/queue?flash=#{URI.encode_www_form_component("Rejected: #{item["repo"]} — #{item["title"]}")}"
 end
 
 post "/queue/:id/findings/:index/remove" do
@@ -965,7 +957,7 @@ post "/queue/:id/findings/:index/remove" do
 
     halt 404, "Invalid finding index" unless params["index"] =~ /\A\d+\z/
     index = params["index"].to_i
-    halt 404, "Finding index out of bounds" if index < 0 || index >= item["findings"].length
+    halt 404, "Finding index out of bounds" if index >= item["findings"].length
 
     item["original_finding_count"] = item["findings"].length unless item["original_finding_count"]
 
@@ -979,22 +971,14 @@ post "/queue/:id/findings/:index/remove" do
     if item["findings"].empty?
         queue.reject(item["id"], reason: "All findings removed during review")
         queue.save
+        safe_backup
 
-        if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-            require_relative "backup"
-            Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
-        end
-
-        redirect "/queue?flash=All findings removed — #{item["repo"]} rejected"
+        redirect "/queue?flash=#{URI.encode_www_form_component("All findings removed — #{item["repo"]} rejected")}"
     else
         queue.save
+        safe_backup
 
-        if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-            require_relative "backup"
-            Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
-        end
-
-        redirect "/queue/#{item["id"]}?flash=Removed finding: #{rule} in #{file}"
+        redirect "/queue/#{item["id"]}?flash=#{URI.encode_www_form_component("Removed finding: #{rule} in #{file}")}"
     end
 end
 
@@ -1113,11 +1097,15 @@ def consume_token(token)
     state = Bot::State.new
     state.consume_token(token)
     state.save
+    safe_backup
+end
 
-    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-        require_relative "backup"
-        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
-    end
+def safe_backup
+    return unless ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+    require_relative "backup"
+    Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save
+rescue => e
+    $stderr.puts "[BACKUP] Error: #{e.class}: #{e.message}"
 end
 
 def format_time_pacific(iso_string)
