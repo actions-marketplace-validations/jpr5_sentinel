@@ -235,4 +235,54 @@ class TestAiConfigInjection < Minitest::Test
         findings = @rule.check(wf)
         assert_empty findings
     end
+
+    # --- Severity differentiation ---
+
+    def test_severity_critical_for_prt
+        yaml = <<~YAML
+          on: pull_request_target
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    ref: ${{ github.event.pull_request.head.sha }}
+                - run: claude review
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal :critical, findings.first.severity
+    end
+
+    def test_severity_high_for_pr
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: claude review
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal :high, findings.first.severity
+    end
+
+    def test_fix_message
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: claude review
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_match(/sanitization step/, findings.first.fix)
+        assert_match(/rm -rf .claude\//, findings.first.fix)
+    end
 end
