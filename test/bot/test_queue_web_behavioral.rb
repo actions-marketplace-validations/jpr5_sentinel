@@ -99,8 +99,8 @@ class TestQueueWebBehavioral < Minitest::Test
 
         yield calls
     ensure
-        Bot::PrWriter.define_method(:create_pr, original_create_pr)
-        Bot::PrWriter.define_method(:create_issue, original_create_issue)
+        Bot::PrWriter.define_method(:create_pr, original_create_pr) if original_create_pr
+        Bot::PrWriter.define_method(:create_issue, original_create_issue) if original_create_issue
     end
 
     public
