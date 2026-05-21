@@ -57,4 +57,56 @@ class TestAiConfigInjection < Minitest::Test
         assert_match(/Claude Code/, findings.first.message)
         assert_match(/pull_request_target/, findings.first.message)
     end
+
+    # --- Checkout semantics ---
+
+    def test_no_flag_prt_default_checkout
+        yaml = <<~YAML
+          on: pull_request_target
+          jobs:
+            label:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - uses: anthropics/claude-code-action@v1
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    def test_flags_pr_with_default_checkout_and_claude_cli
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: claude review --print
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+        assert_equal :high, findings.first.severity
+        assert_match(/Claude Code/, findings.first.message)
+        assert_match(/pull_request/, findings.first.message)
+    end
+
+    def test_no_flag_pr_with_static_ref
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    ref: main
+                - uses: anthropics/claude-code-action@v1
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
 end
