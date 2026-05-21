@@ -86,10 +86,52 @@ class TestBotQueue < Minitest::Test
 
         item = queue.pending.first
         assert_equal 2, item["findings"].length
-        assert_equal "shell-injection-expr", item["findings"][0]["rule"]
-        assert_equal "ci.yml", item["findings"][0]["file"]
-        assert_equal 292, item["findings"][0]["line"]
-        assert_equal "Unsafe expr", item["findings"][0]["message"]
+
+        f0 = item["findings"][0]
+        assert_equal "shell-injection-expr", f0["rule"]
+        assert_equal "critical", f0["severity"]
+        assert_equal "ci.yml", f0["file"]
+        assert_equal 292, f0["line"]
+        assert_equal "", f0["code"]
+        assert_equal "Unsafe expr", f0["message"]
+        assert_equal "fix", f0["fix"]
+
+        f1 = item["findings"][1]
+        assert_equal "shell-injection-expr", f1["rule"]
+        assert_equal "critical", f1["severity"]
+        assert_equal "ci.yml", f1["file"]
+        assert_equal 466, f1["line"]
+        assert_equal "", f1["code"]
+        assert_equal "Another expr", f1["message"]
+        assert_equal "fix2", f1["fix"]
+    end
+
+    def test_add_serializes_all_seven_finding_fields
+        queue = Bot::Queue.new(@queue_file)
+
+        finding = Finding.new(
+            rule: "shell-injection-expr",
+            severity: :critical,
+            file: "ci.yml",
+            line: 42,
+            code: "run: echo ${{ github.event.pull_request.title }}",
+            message: "Unsafe expression",
+            fix: "Use an environment variable"
+        )
+
+        queue.add(repo: "owner/repo", title: "t", body: "b", files: {}, findings: [finding])
+        queue.save
+
+        reloaded = Bot::Queue.new(@queue_file)
+        f = reloaded.pending.first["findings"].first
+
+        assert_equal "shell-injection-expr", f["rule"]
+        assert_equal "critical", f["severity"]
+        assert_equal "ci.yml", f["file"]
+        assert_equal 42, f["line"]
+        assert_equal "run: echo ${{ github.event.pull_request.title }}", f["code"]
+        assert_equal "Unsafe expression", f["message"]
+        assert_equal "Use an environment variable", f["fix"]
     end
 
     def test_add_accepts_hash_findings
