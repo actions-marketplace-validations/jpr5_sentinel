@@ -814,16 +814,33 @@ post "/queue/:id/approve" do
         Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
     end
 
-    AUDIT.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]} type=#{item["type"] || "pr"} via=web")
+    # Determine effective body, files, and type for this approval.
+    # When findings have been curated (some removed), regenerate the body
+    # from remaining findings and filter files to only those still relevant.
+    if item["original_finding_count"]
+        approve_body = build_curated_body(item["repo"], item["findings"], item["original_finding_count"])
+        remaining_files = (item["findings"] || []).map { |f| f["file"] }.uniq
+        approve_files = (item["files"] || {}).select { |path, _| remaining_files.any? { |f| path.end_with?("/#{f}") || path == f } }
+        approve_type = item["type"] || "pr"
+        if approve_files.empty? && (item["findings"] || []).any? && approve_type == "pr"
+            approve_type = "issue"
+        end
+    else
+        approve_body = item["body"]
+        approve_files = item["files"] || {}
+        approve_type = item["type"] || "pr"
+    end
+
+    AUDIT.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]} type=#{approve_type} via=web")
 
     writer = Bot::PrWriter.new(token: token)
     state = Bot::State.new
 
-    if item["type"] == "issue"
+    if approve_type == "issue"
         result = writer.create_issue(
             repo: item["repo"],
             title: item["title"],
-            body: item["body"],
+            body: approve_body,
             labels: ["security"]
         )
 
@@ -871,8 +888,8 @@ post "/queue/:id/approve" do
             repo: item["repo"],
             branch: "sentinel/security-fixes",
             title: item["title"],
-            body: item["body"],
-            files: item["files"] || {},
+            body: approve_body,
+            files: approve_files,
             signoff: item["signoff"]
         )
 
@@ -1238,6 +1255,31 @@ def inline_format(text)
         "<a href=\"#{href}\" target=\"_blank\" rel=\"noopener\">#{link_text}</a>"
     end
     text
+end
+
+def build_curated_body(repo, findings, original_count)
+    rules_hit = findings.map { |f| f["rule"] }.uniq
+    body = "## Security: #{findings.length} finding#{"s" if findings.length != 1} "
+    body += "(curated from #{original_count} original) "
+    body += "across #{rules_hit.length} rule#{"s" if rules_hit.length != 1}\n\n"
+
+    findings.group_by { |f| f["rule"] }.each do |rule, group|
+        body += "**#{rule}** — [What is this?](#{Config::BOT_URL}/rules/#{rule})\n"
+        group.each do |f|
+            body += "- `#{f["file"]}` line #{f["line"]}: #{f["message"]}\n"
+            body += "  - Fix: #{f["fix"]}\n" if f["fix"]
+        end
+        body += "\n"
+    end
+
+    body += "> &#x1f4a1; **Prevent future vulnerabilities** — "
+    body += "[add Sentinel to this repo's CI](https://sentinel.copilotkit.dev/install) "
+    body += "(free, open-source, 30 seconds)\n\n"
+    body += "---\n"
+    body += "<sub>&#x1f6e1;&#xfe0f; [Sentinel](https://sentinel.copilotkit.dev) — "
+    body += "open-source CI/CD security scanner · "
+    body += "Findings reviewed by a human operator before submission</sub>\n"
+    body
 end
 
 def render_markdown_page(rule, markdown)
