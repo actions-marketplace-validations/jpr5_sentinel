@@ -109,4 +109,56 @@ class TestAiConfigInjection < Minitest::Test
         findings = @rule.check(wf)
         assert_empty findings
     end
+
+    # --- AI tool variants ---
+
+    def test_flags_prt_with_aider_action
+        yaml = <<~YAML
+          on: pull_request_target
+          jobs:
+            fix:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    ref: ${{ github.head_ref }}
+                - uses: aider-ai/aider-action@v1
+        YAML
+        wf = Workflow.new(filename: "aider.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+        assert_match(/Aider/, findings.first.message)
+    end
+
+    def test_flags_pr_with_copilot_cli
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: copilot review
+        YAML
+        wf = Workflow.new(filename: "copilot.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+        assert_match(/Copilot/, findings.first.message)
+    end
+
+    def test_flags_sgpt_command
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: sgpt "review this code"
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+        assert_match(/Shell GPT/, findings.first.message)
+    end
 end
