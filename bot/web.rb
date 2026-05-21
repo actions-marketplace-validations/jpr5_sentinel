@@ -675,13 +675,14 @@ get "/queue/:id" do
     findings_html = ""
     if item["findings"] && !item["findings"].empty?
         findings_html = '<h2>Findings</h2>'
-        item["findings"].each do |f|
+        item["findings"].each_with_index do |f, idx|
             severity = f["severity"] || "unknown"
             findings_html += <<~FINDING
             <div class="finding">
               <div class="finding-header">
                 <span class="finding-rule">#{escape_html(f["rule"] || "")}</span>
                 <span class="finding-severity severity-#{escape_html(severity.to_s)}">#{escape_html(severity.to_s)}</span>
+                <form method="POST" action="/queue/#{escape_html(item["id"])}/findings/#{idx}/remove" style="display:inline;margin-left:auto;"><button type="submit" class="btn btn-remove" onclick="return confirm('Remove this finding?')">Remove</button></form>
               </div>
               <div class="finding-location"><a href="https://github.com/#{escape_html(item["repo"])}/blob/HEAD/.github/workflows/#{escape_html(f["file"] || "")}#L#{f["line"]}" target="_blank" rel="noopener">#{escape_html(f["file"] || "")}:#{f["line"]}</a></div>
               <div class="finding-message">#{escape_html(f["message"] || "")}</div>
@@ -730,7 +731,8 @@ get "/queue/:id" do
         .file-header { background: #1a1a2a; padding: 6px 12px; border-radius: 6px 6px 0 0; border: 1px solid #2a2a3a; border-bottom: none; font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #8888a0; }
         .file-change pre { margin-top: 0; border-radius: 0 0 8px 8px; }
         .finding { background: #12121a; border: 1px solid #1a1a2a; border-radius: 6px; padding: 1rem; margin: 0.75rem 0; }
-        .finding-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .finding-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+        .btn-remove { background: rgba(239,68,68,0.15); color: #ef4444; padding: 4px 12px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; border: none; cursor: pointer; }
         .finding-rule { font-weight: 600; color: #e8e8f0; }
         .finding-severity { padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; }
         .severity-critical { background: rgba(239,68,68,0.15); color: #ef4444; }
