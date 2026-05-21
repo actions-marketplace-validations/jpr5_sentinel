@@ -657,6 +657,7 @@ get "/queue/:id" do
     finding_count = (item["findings"] || []).length
     queued = format_time_pacific(item["queued_at"])
     body_html = markdown_to_html(item["body"] || "")
+    flash_msg = params["flash"] ? "<div class=\"flash\">#{escape_html(params["flash"])}</div>" : ""
 
     files_html = ""
     if item["files"] && !item["files"].empty?
@@ -740,12 +741,14 @@ get "/queue/:id" do
         .finding-location { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #8888a0; }
         .finding-message { margin-top: 0.5rem; }
         .finding-fix { margin-top: 0.5rem; color: #22c55e; font-size: 0.9rem; }
+        .flash { background: rgba(34,197,94,0.15); color: #22c55e; padding: 10px 16px; border-radius: 6px; margin-bottom: 1.5rem; }
       </style>
     </head>
     <body>
       <div class="nav">
         <a href="https://sentinel.copilotkit.dev">sentinel</a> / <a href="/dashboard">dashboard</a> / <a href="/queue">queue</a> / #{escape_html(item["id"][0, 8])}
       </div>
+      #{flash_msg}
       <h1>#{escape_html(item["title"])}</h1>
       <div class="meta">
         #{type_badge}
