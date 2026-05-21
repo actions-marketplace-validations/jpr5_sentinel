@@ -2,7 +2,12 @@ source "https://rubygems.org"
 
 gemspec
 
-gem "rake"
-gem "minitest"
-gem "sinatra"
-gem "rack-test"
+group :bot do
+    gem "sinatra", "~> 4.0"
+end
+
+group :development, :test do
+    gem "rake"
+    gem "minitest"
+    gem "rack-test"
+end
