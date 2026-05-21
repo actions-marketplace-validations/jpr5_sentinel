@@ -285,4 +285,67 @@ class TestAiConfigInjection < Minitest::Test
         assert_match(/sanitization step/, findings.first.fix)
         assert_match(/rm -rf .claude\//, findings.first.fix)
     end
+
+    # --- Multi-job and dual-trigger ---
+
+    def test_multiple_jobs_only_vulnerable_fires
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            safe:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: npm test
+            vulnerable:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: claude review
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+        assert_match(/Claude Code/, findings.first.message)
+    end
+
+    def test_both_triggers_evaluated_independently
+        yaml = <<~YAML
+          on:
+            pull_request:
+            pull_request_target:
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    ref: ${{ github.event.pull_request.head.sha }}
+                - run: claude review
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 2, findings.length
+        assert findings.any? { |f| f.severity == :critical && f.message.include?("pull_request_target") }
+        assert findings.any? { |f| f.severity == :high && f.message.include?("pull_request trigger") }
+    end
+
+    def test_both_triggers_prt_only_fires_when_ref_explicit
+        yaml = <<~YAML
+          on:
+            pull_request:
+            pull_request_target:
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: claude review
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length
+        assert_equal :high, findings.first.severity
+        assert_match(/pull_request trigger/, findings.first.message)
+    end
 end
