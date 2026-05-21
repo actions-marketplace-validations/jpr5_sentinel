@@ -232,4 +232,49 @@ class TestBotBackup < Minitest::Test
 
         refute backup.save
     end
+
+    # Regression: scanner_bot must pass explicit queue_path so backup finds the
+    # actual queue file instead of deriving a wrong path from state_path.
+    def test_explicit_queue_path_finds_file_in_different_directory
+        ENV["SENTINEL_BACKUP_GIST_ID"] = "cross-dir-gist"
+        ENV.delete("SENTINEL_QUEUE_PATH")
+
+        # State lives in one directory, queue in another (simulates SENTINEL_STATE_PATH override)
+        state_dir = File.join(@tmpdir, "data")
+        queue_dir = File.join(@tmpdir, "bot")
+        FileUtils.mkdir_p(state_dir)
+        FileUtils.mkdir_p(queue_dir)
+
+        state_file = File.join(state_dir, "state.json")
+        queue_file = File.join(queue_dir, "queue.json")
+        File.write(state_file, JSON.pretty_generate(@sample_state))
+        File.write(queue_file, JSON.pretty_generate(@sample_queue))
+
+        # Without explicit queue_path, backup derives "data/queue.json" which doesn't exist
+        backup_wrong = Bot::Backup.new(token: @token, state_path: state_file)
+        derived_path = backup_wrong.instance_variable_get(:@queue_path)
+        assert_equal File.join(state_dir, "queue.json"), derived_path
+        refute File.exist?(derived_path), "Derived queue path should NOT exist"
+
+        # With explicit queue_path, backup finds the actual file
+        backup_right = Bot::Backup.new(token: @token, state_path: state_file, queue_path: queue_file)
+
+        captured_files = nil
+        backup_right.define_singleton_method(:api_patch) { |path, body|
+            captured_files = body[:files]
+            {"id" => "cross-dir-gist", "files" => {}}
+        }
+        backup_right.define_singleton_method(:api_get) { |path| nil }
+        backup_right.define_singleton_method(:api_post) { |path, body| nil }
+
+        assert backup_right.save
+        assert captured_files.key?("sentinel-state-backup.json"), "Should include state file"
+        assert captured_files.key?("sentinel-queue-backup.json"), "Should include queue file from explicit path"
+
+        # Verify the queue content matches what was written
+        uploaded_queue = JSON.parse(captured_files["sentinel-queue-backup.json"]["content"])
+        assert_equal @sample_queue, uploaded_queue
+    ensure
+        ENV.delete("SENTINEL_BACKUP_GIST_ID")
+    end
 end

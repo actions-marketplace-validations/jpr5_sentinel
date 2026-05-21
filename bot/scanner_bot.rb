@@ -94,7 +94,11 @@ module Bot
             if ENV["GITHUB_TOKEN"] && (ENV["SENTINEL_BACKUP_GIST_ID"] || ENV["SENTINEL_BACKUP_AUTO"])
                 begin
                     require_relative "backup"
-                    backup = Backup.new(token: ENV["GITHUB_TOKEN"], state_path: @state.instance_variable_get(:@path))
+                    backup = Backup.new(
+                        token: ENV["GITHUB_TOKEN"],
+                        state_path: @state.instance_variable_get(:@path),
+                        queue_path: @queue.instance_variable_get(:@path)
+                    )
                     backup.save
                 rescue => e
                     $stderr.puts "Backup failed (non-fatal): #{e.message}"
