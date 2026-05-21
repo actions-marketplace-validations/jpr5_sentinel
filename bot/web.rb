@@ -932,6 +932,47 @@ post "/queue/:id/reject" do
     redirect "/queue?flash=Rejected: #{item["repo"]} — #{item["title"]}"
 end
 
+post "/queue/:id/findings/:index/remove" do
+    queue = Bot::Queue.new
+
+    item = queue.pending.find { |i| i["id"] == params["id"] || i["id"].start_with?(params["id"]) }
+    halt 404, "Item not found in queue" unless item
+
+    halt 404, "Invalid finding index" unless params["index"] =~ /\A\d+\z/
+    index = params["index"].to_i
+    halt 404, "Finding index out of bounds" if index < 0 || index >= item["findings"].length
+
+    item["original_finding_count"] = item["findings"].length unless item["original_finding_count"]
+
+    removed = item["findings"].delete_at(index)
+    rule = removed["rule"]
+    file = removed["file"]
+    line = removed["line"]
+
+    AUDIT.finding_removed(item["repo"], rule, file, line)
+
+    if item["findings"].empty?
+        queue.reject(item["id"], reason: "All findings removed during review")
+        queue.save
+
+        if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+            require_relative "backup"
+            Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
+        end
+
+        redirect "/queue?flash=All findings removed — #{item["repo"]} rejected"
+    else
+        queue.save
+
+        if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+            require_relative "backup"
+            Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
+        end
+
+        redirect "/queue/#{item["id"]}?flash=Removed finding: #{rule} in #{file}"
+    end
+end
+
 # Scan trigger page
 get "/scan" do
     halt 503, "SCAN_TOKEN not configured" unless ENV["SCAN_TOKEN"]
