@@ -6,9 +6,9 @@ class TestRuleEngine < Minitest::Test
     end
 
     def test_loads_all_rules
-        # 30 rule files (everything in lib/rules/ except base.rb)
-        assert_equal 30, @engine.rules.length,
-            "Expected 30 rules, got #{@engine.rules.length}: #{@engine.rules.map(&:name).sort.join(', ')}"
+        # 31 rule files (everything in lib/rules/ except base.rb)
+        assert_equal 31, @engine.rules.length,
+            "Expected 31 rules, got #{@engine.rules.length}: #{@engine.rules.map(&:name).sort.join(', ')}"
     end
 
     def test_all_rules_have_name
