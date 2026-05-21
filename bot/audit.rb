@@ -53,6 +53,10 @@ module Bot
             log("ADOPT", repo: repo)
         end
 
+        def finding_removed(repo, rule, file, line)
+            log("FINDING_REMOVED", repo: repo, details: "rule=#{rule} file=#{file} line=#{line}")
+        end
+
         def error(repo, message)
             log("ERROR", repo: repo, details: "msg=#{message}")
         end
