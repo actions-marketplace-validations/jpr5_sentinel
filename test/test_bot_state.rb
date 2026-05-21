@@ -403,14 +403,13 @@ class TestBotState < Minitest::Test
         refute_includes repos, "owner/repo2"
     end
 
-    def test_non_terminal_prs_includes_closed
+    def test_non_terminal_prs_excludes_closed
         state = Bot::State.new(@state_file)
         state.record_pr("owner/repo1", "https://github.com/owner/repo1/pull/1", "rule-a", 1)
         state.update_pr_status("owner/repo1", 1, "closed")
 
         non_terminal = state.non_terminal_prs
-        assert_equal 1, non_terminal.length
-        assert_equal "closed", non_terminal.first[:pr]["status"]
+        assert_equal 0, non_terminal.length
     end
 
     def test_non_terminal_prs_includes_open

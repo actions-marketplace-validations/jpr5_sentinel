@@ -7,8 +7,8 @@ module Bot
         def initialize(path = Config::STATE_FILE)
             @path = resolve_state_path(path)
             @data = with_lock {
-                if File.exist?(path)
-                    JSON.parse(File.read(path))
+                if File.exist?(@path)
+                    JSON.parse(File.read(@path))
                 else
                     { "repos" => {}, "opt_outs" => [] }
                 end
@@ -104,7 +104,7 @@ module Bot
         end
 
         def non_terminal_prs
-            all_tracked_entries.reject { |e| e[:pr]["status"] == "merged" }
+            all_tracked_entries.reject { |e| %w[merged closed].include?(e[:pr]["status"]) }
         end
 
         def record_opt_out(repo_name)
