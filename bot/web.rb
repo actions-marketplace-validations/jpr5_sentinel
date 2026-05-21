@@ -507,7 +507,7 @@ get "/queue" do
         <<~ROW
         <tr>
           <td>#{type_badge}</td>
-          <td><a href="https://github.com/#{escape_html(item["repo"])}">#{escape_html(item["repo"])}</a></td>
+          <td><a href="https://github.com/#{escape_html(item["repo"])}" target="_blank" rel="noopener">#{escape_html(item["repo"])}</a></td>
           <td><a href="/queue/#{escape_html(item["id"])}">#{escape_html(item["title"])}</a></td>
           <td>#{finding_count}</td>
           <td>#{escape_html(queued)}</td>
