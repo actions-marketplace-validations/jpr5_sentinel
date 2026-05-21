@@ -161,4 +161,78 @@ class TestAiConfigInjection < Minitest::Test
         assert_equal 1, findings.length
         assert_match(/Shell GPT/, findings.first.message)
     end
+
+    # --- Sanitization ---
+
+    def test_no_flag_when_sanitized
+        yaml = <<~YAML
+          on: pull_request_target
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    ref: ${{ github.event.pull_request.head.sha }}
+                - run: rm -rf .claude/ .cursor/ && rm -f .mcp.json CLAUDE.md
+                - uses: anthropics/claude-code-action@v1
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    def test_partial_sanitization_counts
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: rm -f .mcp.json
+                - run: claude review
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    # --- Working directory isolation ---
+
+    def test_no_flag_isolated_working_directory
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            review:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    path: pr-code
+                - uses: anthropics/claude-code-action@v1
+                  with:
+                    working-directory: safe-dir
+        YAML
+        wf = Workflow.new(filename: "ai-review.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
+
+    # --- No AI tool = no findings ---
+
+    def test_no_flag_no_ai_tool
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - run: npm test
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings
+    end
 end
