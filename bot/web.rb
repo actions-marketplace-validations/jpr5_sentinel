@@ -655,6 +655,7 @@ get "/queue/:id" do
 
     type_badge = item["type"] == "issue" ? '<span class="type-badge type-issue">Issue</span>' : '<span class="type-badge type-pr">PR</span>'
     finding_count = (item["findings"] || []).length
+    original_count = item["original_finding_count"]
     queued = format_time_pacific(item["queued_at"])
     body_html = markdown_to_html(item["body"] || "")
     flash_msg = params["flash"] ? "<div class=\"flash\">#{escape_html(params["flash"])}</div>" : ""
@@ -757,7 +758,7 @@ get "/queue/:id" do
       <div class="meta">
         #{type_badge}
         &middot; <a href="https://github.com/#{escape_html(item["repo"])}">#{escape_html(item["repo"])}</a>
-        &middot; #{finding_count} finding#{finding_count == 1 ? "" : "s"}
+        &middot; #{original_count ? "#{finding_count} of #{original_count} findings remaining" : "#{finding_count} finding#{finding_count == 1 ? "" : "s"}"}
         &middot; Queued #{escape_html(queued)}
       </div>
       <div class="action-bar">
