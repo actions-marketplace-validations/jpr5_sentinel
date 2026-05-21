@@ -1264,7 +1264,7 @@ def build_curated_body(repo, findings, original_count)
     body += "across #{rules_hit.length} rule#{"s" if rules_hit.length != 1}\n\n"
 
     findings.group_by { |f| f["rule"] }.each do |rule, group|
-        body += "**#{rule}** — [What is this?](#{Config::BOT_URL}/rules/#{rule})\n"
+        body += "**#{rule}** — [What is this?](#{Bot::Config::BOT_URL}/rules/#{rule})\n"
         group.each do |f|
             body += "- `#{f["file"]}` line #{f["line"]}: #{f["message"]}\n"
             body += "  - Fix: #{f["fix"]}\n" if f["fix"]
