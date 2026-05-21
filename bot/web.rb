@@ -769,12 +769,12 @@ get "/queue/:id" do
         </form>
         <a href="/queue" class="btn btn-back">Back to queue</a>
       </div>
+      #{findings_html}
       <h2>PR/Issue Body</h2>
       <div class="body-content">
         #{body_html}
       </div>
       #{files_html}
-      #{findings_html}
       <div class="action-bar">
         <form method="POST" action="/queue/#{escape_html(item["id"])}/approve" style="display:inline">
           <button type="submit" class="btn btn-approve">Approve</button>
