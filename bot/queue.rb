@@ -32,7 +32,7 @@ module Bot
                     if f.is_a?(Hash)
                         f.transform_keys(&:to_s)
                     else
-                        { "rule" => f.rule, "file" => f.file, "line" => f.line, "message" => f.message }
+                        f.to_h.transform_keys(&:to_s)
                     end
                 },
                 "signoff" => signoff,
@@ -53,16 +53,18 @@ module Bot
             item = @data["pending"].find { |i| i["id"] == id }
             return nil unless item
             @data["pending"].delete(item)
-            @data["approved"] << item.merge("approved_at" => Time.now.utc.iso8601)
-            item
+            approved_item = item.merge("approved_at" => Time.now.utc.iso8601)
+            @data["approved"] << approved_item
+            approved_item
         end
 
         def reject(id, reason: nil)
             item = @data["pending"].find { |i| i["id"] == id }
             return nil unless item
             @data["pending"].delete(item)
-            @data["rejected"] << item.merge("rejected_at" => Time.now.utc.iso8601, "reason" => reason)
-            item
+            rejected_item = item.merge("rejected_at" => Time.now.utc.iso8601, "reason" => reason)
+            @data["rejected"] << rejected_item
+            rejected_item
         end
 
         def size

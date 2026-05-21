@@ -3,6 +3,7 @@
 require "sinatra"
 require "json"
 require "time"
+require "uri"
 require_relative "audit"
 require_relative "config"
 require_relative "github_app_auth"
@@ -260,10 +261,7 @@ post "/opt-out" do
     state.record_opt_out(repo)
     state.save
 
-    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-        require_relative "backup"
-        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
-    end
+    safe_backup
 
     AUDIT.opt_out(repo)
     consume_token(token)
@@ -507,7 +505,7 @@ get "/queue" do
         <<~ROW
         <tr>
           <td>#{type_badge}</td>
-          <td><a href="https://github.com/#{escape_html(item["repo"])}">#{escape_html(item["repo"])}</a></td>
+          <td><a href="https://github.com/#{escape_html(item["repo"])}" target="_blank" rel="noopener">#{escape_html(item["repo"])}</a></td>
           <td><a href="/queue/#{escape_html(item["id"])}">#{escape_html(item["title"])}</a></td>
           <td>#{finding_count}</td>
           <td>#{escape_html(queued)}</td>
@@ -655,8 +653,10 @@ get "/queue/:id" do
 
     type_badge = item["type"] == "issue" ? '<span class="type-badge type-issue">Issue</span>' : '<span class="type-badge type-pr">PR</span>'
     finding_count = (item["findings"] || []).length
+    original_count = item["original_finding_count"]
     queued = format_time_pacific(item["queued_at"])
     body_html = markdown_to_html(item["body"] || "")
+    flash_msg = params["flash"] ? "<div class=\"flash\">#{escape_html(params["flash"])}</div>" : ""
 
     files_html = ""
     if item["files"] && !item["files"].empty?
@@ -674,15 +674,16 @@ get "/queue/:id" do
     findings_html = ""
     if item["findings"] && !item["findings"].empty?
         findings_html = '<h2>Findings</h2>'
-        item["findings"].each do |f|
+        item["findings"].each_with_index do |f, idx|
             severity = f["severity"] || "unknown"
             findings_html += <<~FINDING
             <div class="finding">
               <div class="finding-header">
                 <span class="finding-rule">#{escape_html(f["rule"] || "")}</span>
                 <span class="finding-severity severity-#{escape_html(severity.to_s)}">#{escape_html(severity.to_s)}</span>
+                <form method="POST" action="/queue/#{escape_html(item["id"])}/findings/#{idx}/remove" style="display:inline;margin-left:auto;"><button type="submit" class="btn btn-remove" onclick="return confirm('Remove this finding?')">Remove</button></form>
               </div>
-              <div class="finding-location">#{escape_html(f["file"] || "")}:#{f["line"]}</div>
+              <div class="finding-location"><a href="https://github.com/#{escape_html(item["repo"])}/blob/HEAD/.github/workflows/#{escape_html(f["file"] || "")}#L#{f["line"]}" target="_blank" rel="noopener">#{escape_html(f["file"] || "")}:#{f["line"]}</a></div>
               <div class="finding-message">#{escape_html(f["message"] || "")}</div>
               #{f["fix"] ? "<div class=\"finding-fix\"><strong>Fix:</strong> #{escape_html(f["fix"])}</div>" : ""}
             </div>
@@ -729,7 +730,8 @@ get "/queue/:id" do
         .file-header { background: #1a1a2a; padding: 6px 12px; border-radius: 6px 6px 0 0; border: 1px solid #2a2a3a; border-bottom: none; font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #8888a0; }
         .file-change pre { margin-top: 0; border-radius: 0 0 8px 8px; }
         .finding { background: #12121a; border: 1px solid #1a1a2a; border-radius: 6px; padding: 1rem; margin: 0.75rem 0; }
-        .finding-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .finding-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+        .btn-remove { background: rgba(239,68,68,0.15); color: #ef4444; padding: 4px 12px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; border: none; cursor: pointer; }
         .finding-rule { font-weight: 600; color: #e8e8f0; }
         .finding-severity { padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 500; }
         .severity-critical { background: rgba(239,68,68,0.15); color: #ef4444; }
@@ -738,19 +740,23 @@ get "/queue/:id" do
         .severity-low { background: rgba(107,114,128,0.15); color: #6b7280; }
         .severity-unknown { background: rgba(107,114,128,0.15); color: #6b7280; }
         .finding-location { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #8888a0; }
+        .finding-location a { color: #8888a0; text-decoration: underline; }
+        .finding-location a:hover { color: #a0a0c0; }
         .finding-message { margin-top: 0.5rem; }
         .finding-fix { margin-top: 0.5rem; color: #22c55e; font-size: 0.9rem; }
+        .flash { background: rgba(34,197,94,0.15); color: #22c55e; padding: 10px 16px; border-radius: 6px; margin-bottom: 1.5rem; }
       </style>
     </head>
     <body>
       <div class="nav">
         <a href="https://sentinel.copilotkit.dev">sentinel</a> / <a href="/dashboard">dashboard</a> / <a href="/queue">queue</a> / #{escape_html(item["id"][0, 8])}
       </div>
+      #{flash_msg}
       <h1>#{escape_html(item["title"])}</h1>
       <div class="meta">
         #{type_badge}
-        &middot; <a href="https://github.com/#{escape_html(item["repo"])}">#{escape_html(item["repo"])}</a>
-        &middot; #{finding_count} finding#{finding_count == 1 ? "" : "s"}
+        &middot; <a href="https://github.com/#{escape_html(item["repo"])}" target="_blank" rel="noopener">#{escape_html(item["repo"])}</a>
+        &middot; #{original_count ? "#{finding_count} of #{original_count} findings remaining" : "#{finding_count} finding#{finding_count == 1 ? "" : "s"}"}
         &middot; Queued #{escape_html(queued)}
       </div>
       <div class="action-bar">
@@ -801,21 +807,35 @@ post "/queue/:id/approve" do
     item = queue.approve(match["id"])
     queue.save
 
-    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-        require_relative "backup"
-        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
+    safe_backup
+
+    # Determine effective body, files, and type for this approval.
+    # When findings have been curated (some removed), regenerate the body
+    # from remaining findings and filter files to only those still relevant.
+    if item["original_finding_count"]
+        approve_body = build_curated_body(item["repo"], item["findings"], item["original_finding_count"])
+        remaining_files = (item["findings"] || []).map { |f| f["file"] }.uniq
+        approve_files = (item["files"] || {}).select { |path, _| remaining_files.any? { |f| path.end_with?("/#{f}") || path == f } }
+        approve_type = item["type"] || "pr"
+        if approve_files.empty? && (item["findings"] || []).any? && approve_type == "pr"
+            approve_type = "issue"
+        end
+    else
+        approve_body = item["body"]
+        approve_files = item["files"] || {}
+        approve_type = item["type"] || "pr"
     end
 
-    AUDIT.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]} type=#{item["type"] || "pr"} via=web")
+    AUDIT.log("QUEUE_APPROVE", repo: item["repo"], details: "id=#{match["id"][0, 8]} type=#{approve_type} via=web")
 
     writer = Bot::PrWriter.new(token: token)
     state = Bot::State.new
 
-    if item["type"] == "issue"
+    if approve_type == "issue"
         result = writer.create_issue(
             repo: item["repo"],
             title: item["title"],
-            body: item["body"],
+            body: approve_body,
             labels: ["security"]
         )
 
@@ -863,8 +883,8 @@ post "/queue/:id/approve" do
             repo: item["repo"],
             branch: "sentinel/security-fixes",
             title: item["title"],
-            body: item["body"],
-            files: item["files"] || {},
+            body: approve_body,
+            files: approve_files,
             signoff: item["signoff"]
         )
 
@@ -922,14 +942,44 @@ post "/queue/:id/reject" do
     item = queue.reject(match["id"], reason: reason)
     queue.save
 
-    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-        require_relative "backup"
-        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
-    end
+    safe_backup
 
     AUDIT.log("QUEUE_REJECT", repo: item["repo"], details: "id=#{match["id"][0, 8]} reason=#{reason || 'none'} via=web")
 
-    redirect "/queue?flash=Rejected: #{item["repo"]} — #{item["title"]}"
+    redirect "/queue?flash=#{URI.encode_www_form_component("Rejected: #{item["repo"]} — #{item["title"]}")}"
+end
+
+post "/queue/:id/findings/:index/remove" do
+    queue = Bot::Queue.new
+
+    item = queue.pending.find { |i| i["id"] == params["id"] || i["id"].start_with?(params["id"]) }
+    halt 404, "Item not found in queue" unless item
+
+    halt 404, "Invalid finding index" unless params["index"] =~ /\A\d+\z/
+    index = params["index"].to_i
+    halt 404, "Finding index out of bounds" if index >= item["findings"].length
+
+    item["original_finding_count"] = item["findings"].length unless item["original_finding_count"]
+
+    removed = item["findings"].delete_at(index)
+    rule = removed["rule"]
+    file = removed["file"]
+    line = removed["line"]
+
+    AUDIT.finding_removed(item["repo"], rule, file, line)
+
+    if item["findings"].empty?
+        queue.reject(item["id"], reason: "All findings removed during review")
+        queue.save
+        safe_backup
+
+        redirect "/queue?flash=#{URI.encode_www_form_component("All findings removed — #{item["repo"]} rejected")}"
+    else
+        queue.save
+        safe_backup
+
+        redirect "/queue/#{item["id"]}?flash=#{URI.encode_www_form_component("Removed finding: #{rule} in #{file}")}"
+    end
 end
 
 # Scan trigger page
@@ -1047,11 +1097,15 @@ def consume_token(token)
     state = Bot::State.new
     state.consume_token(token)
     state.save
+    safe_backup
+end
 
-    if ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
-        require_relative "backup"
-        Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save rescue nil
-    end
+def safe_backup
+    return unless ENV["SENTINEL_BACKUP_GIST_ID"] && ENV["GITHUB_TOKEN"]
+    require_relative "backup"
+    Bot::Backup.new(token: ENV["GITHUB_TOKEN"]).save
+rescue => e
+    $stderr.puts "[BACKUP] Error: #{e.class}: #{e.message}"
 end
 
 def format_time_pacific(iso_string)
@@ -1186,9 +1240,34 @@ def inline_format(text)
         link_text = $1
         url = $2
         href = url.match?(/\Ahttps?:\/\//) ? url : "#"
-        "<a href=\"#{href}\">#{link_text}</a>"
+        "<a href=\"#{href}\" target=\"_blank\" rel=\"noopener\">#{link_text}</a>"
     end
     text
+end
+
+def build_curated_body(repo, findings, original_count)
+    rules_hit = findings.map { |f| f["rule"] }.uniq
+    body = "## Security: #{findings.length} finding#{"s" if findings.length != 1} "
+    body += "(curated from #{original_count} original) "
+    body += "across #{rules_hit.length} rule#{"s" if rules_hit.length != 1}\n\n"
+
+    findings.group_by { |f| f["rule"] }.each do |rule, group|
+        body += "**#{rule}** — [What is this?](#{Bot::Config::BOT_URL}/rules/#{rule})\n"
+        group.each do |f|
+            body += "- `#{f["file"]}` line #{f["line"]}: #{f["message"]}\n"
+            body += "  - Fix: #{f["fix"]}\n" if f["fix"]
+        end
+        body += "\n"
+    end
+
+    body += "> &#x1f4a1; **Prevent future vulnerabilities** — "
+    body += "[add Sentinel to this repo's CI](https://sentinel.copilotkit.dev/install) "
+    body += "(free, open-source, 30 seconds)\n\n"
+    body += "---\n"
+    body += "<sub>&#x1f6e1;&#xfe0f; [Sentinel](https://sentinel.copilotkit.dev) — "
+    body += "open-source CI/CD security scanner · "
+    body += "Findings reviewed by a human operator before submission</sub>\n"
+    body
 end
 
 def render_markdown_page(rule, markdown)
