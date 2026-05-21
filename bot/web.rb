@@ -683,7 +683,7 @@ get "/queue/:id" do
                 <span class="finding-rule">#{escape_html(f["rule"] || "")}</span>
                 <span class="finding-severity severity-#{escape_html(severity.to_s)}">#{escape_html(severity.to_s)}</span>
               </div>
-              <div class="finding-location">#{escape_html(f["file"] || "")}:#{f["line"]}</div>
+              <div class="finding-location"><a href="https://github.com/#{escape_html(item["repo"])}/blob/HEAD/.github/workflows/#{escape_html(f["file"] || "")}#L#{f["line"]}" target="_blank" rel="noopener">#{escape_html(f["file"] || "")}:#{f["line"]}</a></div>
               <div class="finding-message">#{escape_html(f["message"] || "")}</div>
               #{f["fix"] ? "<div class=\"finding-fix\"><strong>Fix:</strong> #{escape_html(f["fix"])}</div>" : ""}
             </div>
@@ -739,6 +739,8 @@ get "/queue/:id" do
         .severity-low { background: rgba(107,114,128,0.15); color: #6b7280; }
         .severity-unknown { background: rgba(107,114,128,0.15); color: #6b7280; }
         .finding-location { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; color: #8888a0; }
+        .finding-location a { color: #8888a0; text-decoration: underline; }
+        .finding-location a:hover { color: #a0a0c0; }
         .finding-message { margin-top: 0.5rem; }
         .finding-fix { margin-top: 0.5rem; color: #22c55e; font-size: 0.9rem; }
         .flash { background: rgba(34,197,94,0.15); color: #22c55e; padding: 10px 16px; border-radius: 6px; margin-bottom: 1.5rem; }
