@@ -151,6 +151,7 @@ module Bot
             begin
                 result = @scanner.scan(repo[:full_name])
                 findings = result[:findings]
+                cached_workflows = result[:workflows] || []
             rescue => e
                 @audit.error(repo[:full_name], e.message)
                 $stderr.puts "  Error scanning: #{e.message}"
@@ -158,11 +159,17 @@ module Bot
                 return
             end
 
+            # Build a content map from the scanner's cached workflow data so we
+            # don't re-fetch files that the scanner already downloaded.
+            workflow_content_cache = {}
+            cached_workflows.each do |w|
+                workflow_content_cache[w[:filename]] = w[:content] if w[:content]
+            end
+
             # Skip repos that already use Sentinel
             gh_client = GitHubClient.new(token: @token)
             sentinel_config = gh_client.file_exists?(repo[:full_name], ".github/.sentinel-ci.yml")
-            workflows = gh_client.fetch_workflows(repo[:full_name])
-            sentinel_workflow = workflows.any? { |w| w[:content]&.match?(/uses:\s*jpr5\/sentinel/) }
+            sentinel_workflow = cached_workflows.any? { |w| w[:content]&.match?(/uses:\s*jpr5\/sentinel/) }
             if sentinel_config || sentinel_workflow
                 @audit.skip(repo[:full_name], "already_uses_sentinel")
                 $stderr.puts "  Already uses Sentinel, skipping"
@@ -218,7 +225,11 @@ module Bot
             advisory_findings = [] # findings that need manual review
 
             critical_findings.group_by(&:file).each do |file, file_findings|
-                content = gh_client.fetch_file_content(repo[:full_name], ".github/workflows/#{file}")
+                content = workflow_content_cache[file]
+                unless content
+                    $stderr.puts "  WARNING: No cached content for #{file}, attempting re-fetch"
+                    content = gh_client.fetch_file_content(repo[:full_name], ".github/workflows/#{file}")
+                end
                 next unless content
 
                 patched = content

@@ -124,7 +124,7 @@ class Scanner
             findings: findings
         )
 
-        { output: output, findings: findings, workflow_count: workflow_count }
+        { output: output, findings: findings, workflow_count: workflow_count, workflows: raw_workflows || [] }
     end
 
     def scan_org(org)
