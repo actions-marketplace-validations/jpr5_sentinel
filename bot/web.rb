@@ -757,7 +757,7 @@ get "/queue/:id" do
       <h1>#{escape_html(item["title"])}</h1>
       <div class="meta">
         #{type_badge}
-        &middot; <a href="https://github.com/#{escape_html(item["repo"])}">#{escape_html(item["repo"])}</a>
+        &middot; <a href="https://github.com/#{escape_html(item["repo"])}" target="_blank" rel="noopener">#{escape_html(item["repo"])}</a>
         &middot; #{original_count ? "#{finding_count} of #{original_count} findings remaining" : "#{finding_count} finding#{finding_count == 1 ? "" : "s"}"}
         &middot; Queued #{escape_html(queued)}
       </div>
@@ -1235,7 +1235,7 @@ def inline_format(text)
         link_text = $1
         url = $2
         href = url.match?(/\Ahttps?:\/\//) ? url : "#"
-        "<a href=\"#{href}\">#{link_text}</a>"
+        "<a href=\"#{href}\" target=\"_blank\" rel=\"noopener\">#{link_text}</a>"
     end
     text
 end
