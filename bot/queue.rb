@@ -32,7 +32,7 @@ module Bot
                     if f.is_a?(Hash)
                         f.transform_keys(&:to_s)
                     else
-                        { "rule" => f.rule, "file" => f.file, "line" => f.line, "message" => f.message }
+                        f.to_h.transform_keys(&:to_s)
                     end
                 },
                 "signoff" => signoff,
