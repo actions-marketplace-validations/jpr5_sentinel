@@ -58,8 +58,9 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SERVICE_ID: ${{ matrix.service.railway_id }}
           ENV_ID: ${{ env.RAILWAY_ENV_ID }}
+          PROJECT_ID: "570b2f3f-69dd-4f55-999a-9c72ecec00b1"
         run: |
-          # Update the image reference directly so Railway pulls the new tag.
+          # Update the image reference so Railway knows which tag to pull.
           IMAGE="ghcr.io/jpr5/${{ matrix.service.image }}:${{ github.sha }}"
           RESULT=$(curl -s -X POST "https://backboard.railway.com/graphql/v2" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
@@ -67,7 +68,18 @@ jobs:
             -d "{\"query\":\"mutation { serviceInstanceUpdate(serviceId: \\\"$SERVICE_ID\\\", environmentId: \\\"$ENV_ID\\\", input: { source: { image: \\\"$IMAGE\\\" } }) }\"}")
           ERRORS=$(echo "$RESULT" | jq -r '.errors[]?.message // empty')
           if [ -n "$ERRORS" ]; then
-            echo "::error::Railway deploy failed: $ERRORS"
+            echo "::error::Railway image update failed: $ERRORS"
+            exit 1
+          fi
+
+          # Env var change forces Railway to re-pull the image and start a fresh container.
+          RESULT=$(curl -s -X POST "https://backboard.railway.com/graphql/v2" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { variableCollectionUpsert(input: { projectId: \\\"$PROJECT_ID\\\", environmentId: \\\"$ENV_ID\\\", serviceId: \\\"$SERVICE_ID\\\", variables: { DEPLOY_SHA: \\\"${{ github.sha }}\\\" } }) }\"}")
+          ERRORS=$(echo "$RESULT" | jq -r '.errors[]?.message // empty')
+          if [ -n "$ERRORS" ]; then
+            echo "::error::Railway deploy trigger failed: $ERRORS"
             exit 1
           fi
           echo "Deploy triggered for ${{ matrix.service.name }} (image: $IMAGE)"
