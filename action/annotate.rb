@@ -242,7 +242,7 @@ end
 
 # Read inputs from environment (GitHub Actions sets INPUT_* vars)
 severity  = (ENV["INPUT_SEVERITY"] || "high").downcase
-fail_on   = (ENV["INPUT_FAIL_ON_FINDINGS"] || "true").downcase == "true"
+fail_on   = (ENV["INPUT_FAIL-ON-FINDINGS"] || ENV["INPUT_FAIL_ON_FINDINGS"] || "true").downcase == "true"
 workspace = ENV["GITHUB_WORKSPACE"] || "/github/workspace"
 
 # Validate severity
