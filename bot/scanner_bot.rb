@@ -4,6 +4,7 @@ require "optparse"
 require "json"
 require "yaml"
 require "securerandom"
+require "set"
 require "uri"
 require "time"
 require_relative "../lib/scanner"
@@ -17,6 +18,7 @@ require_relative "pr_writer"
 require_relative "queue"
 require_relative "audit"
 require_relative "sync"
+require_relative "slack_alert"
 
 module Bot
     class ScannerBot
@@ -60,7 +62,17 @@ module Bot
                 @audit.run_start(pattern, @dry_run, @limit)
                 $stderr.puts "Bot run: pattern=#{pattern} dry_run=#{@dry_run}"
                 $stderr.puts "Query: #{query[:query]}"
-                candidates = @search.find_candidates(query)
+
+                # Always scan org repos as a backstop (bypass min_stars filter)
+                org_candidates = Config::ORG_REPOS.map { |r| { full_name: r, stars: 0, org_repo: true } }
+                search_candidates = @search.find_candidates(query)
+
+                # Deduplicate: org repos take priority (already at front)
+                seen = org_candidates.map { |c| c[:full_name] }.to_set
+                search_candidates.reject! { |c| seen.include?(c[:full_name]) }
+                candidates = org_candidates + search_candidates
+
+                $stderr.puts "  Org backstop repos: #{org_candidates.length}"
             end
             $stderr.puts "Found #{candidates.length} candidate repos"
 
@@ -177,10 +189,9 @@ module Bot
                 return
             end
 
-            # Filter to critical/high findings matching fixable rules
-            critical_findings = findings.select { |f|
-                Config::CRITICAL_RULES.include?(f.rule) && (f.critical? || f.high?)
-            }
+            # Filter to critical/high findings by severity (the Scanner's min_severity
+            # already gates, but re-check here for defense-in-depth)
+            critical_findings = findings.select { |f| f.critical? || f.high? }
 
             @state.record_scan(repo[:full_name], critical_findings)
 
@@ -263,6 +274,18 @@ module Bot
                 create_fix_pr(repo, fixed_findings, advisory_findings, fixed_files, signoff)
             else
                 create_advisory_issue(repo, advisory_findings)
+            end
+
+            # Slack alert for org repos — only after findings survived all gates and reached
+            # the queue / PR / issue creation step. Suppressed in dry_run mode since no
+            # real action was taken (queue_mode still alerts since findings are real and
+            # require human attention per spec).
+            if !@dry_run && SlackAlert.org_repo?(repo[:full_name])
+                all_actioned = fixed_findings + advisory_findings
+                SlackAlert.post(
+                    repo: repo[:full_name],
+                    findings: all_actioned
+                )
             end
         end
 

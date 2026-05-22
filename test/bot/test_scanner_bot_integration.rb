@@ -274,7 +274,9 @@ class TestScannerBotIntegration < Minitest::Test
 
         summary = bot.instance_variable_get(:@summary)
         assert_equal 1, summary[:skipped], "Bot should skip already-processed repos"
-        assert_equal 0, summary[:scanned], "Bot should not scan already-processed repos"
+        # 6 org backstop repos are always scanned in addition to search results
+        assert_equal Bot::Config::ORG_REPOS.length, summary[:scanned],
+            "Bot should not scan already-processed repos (only org backstop repos scanned)"
     end
 
     # ========================================================================
@@ -292,7 +294,9 @@ class TestScannerBotIntegration < Minitest::Test
 
         summary = bot.instance_variable_get(:@summary)
         assert_equal 1, summary[:skipped], "Bot should skip opted-out repos"
-        assert_equal 0, summary[:scanned], "Bot should not scan opted-out repos"
+        # 6 org backstop repos are always scanned in addition to search results
+        assert_equal Bot::Config::ORG_REPOS.length, summary[:scanned],
+            "Bot should not scan opted-out repos (only org backstop repos scanned)"
     end
 
     # ========================================================================
@@ -767,7 +771,8 @@ class TestScannerBotIntegration < Minitest::Test
         _output = capture_io { bot.run }
 
         summary = bot.instance_variable_get(:@summary)
-        assert_equal 1, summary[:scanned], "Should have scanned 1 repo"
+        # 6 org backstop repos + 1 search candidate
+        assert_equal Bot::Config::ORG_REPOS.length + 1, summary[:scanned], "Should have scanned org repos + 1 search repo"
         assert summary[:findings] > 0, "Should have found findings"
 
         queue = bot.instance_variable_get(:@queue)
@@ -816,7 +821,392 @@ class TestScannerBotIntegration < Minitest::Test
 
         summary = bot.instance_variable_get(:@summary)
         assert_equal 2, summary[:skipped], "Should skip opted-out + already-processed"
-        assert_equal 1, summary[:scanned], "Should scan only the clean repo"
+        # 6 org backstop repos + 1 clean search repo
+        assert_equal Bot::Config::ORG_REPOS.length + 1, summary[:scanned],
+            "Should scan org backstop repos + the clean repo"
         assert_equal 0, summary[:findings], "Clean repo should have no findings"
+    end
+
+    # ========================================================================
+    # Slack alert integration: fires for org repos with critical findings
+    # ========================================================================
+
+    def test_slack_alert_fires_for_org_repo_with_findings
+        ENV["SLACK_WEBHOOK_OSS_ALERTS"] = "https://hooks.slack.com/services/T00/B00/xxx"
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        finding = make_shell_injection_finding(line: 12)
+        @stub_search.candidates = [{ full_name: "CopilotKit/some-repo", stars: 1000 }]
+        @stub_scanner.scan_results["CopilotKit/some-repo"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["CopilotKit/some-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["CopilotKit/some-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        slack_calls = []
+        original_post = Bot::SlackAlert.method(:post)
+        Bot::SlackAlert.define_singleton_method(:post) do |repo:, findings:|
+            slack_calls << { repo: repo, findings: findings }
+            nil
+        end
+
+        _output = capture_io { bot.run }
+
+        Bot::SlackAlert.define_singleton_method(:post, original_post)
+
+        assert_equal 1, slack_calls.length, "SlackAlert.post should be called once for org repo"
+        assert_equal "CopilotKit/some-repo", slack_calls.first[:repo]
+        assert_equal 1, slack_calls.first[:findings].length
+    ensure
+        ENV.delete("SLACK_WEBHOOK_OSS_ALERTS")
+    end
+
+    def test_slack_alert_does_not_fire_for_external_repo
+        ENV["SLACK_WEBHOOK_OSS_ALERTS"] = "https://hooks.slack.com/services/T00/B00/xxx"
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        finding = make_shell_injection_finding(line: 12)
+        @stub_search.candidates = [{ full_name: "facebook/react", stars: 1000 }]
+        @stub_scanner.scan_results["facebook/react"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["facebook/react", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["facebook/react", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        slack_calls = []
+        original_post = Bot::SlackAlert.method(:post)
+        Bot::SlackAlert.define_singleton_method(:post) do |repo:, findings:|
+            slack_calls << { repo: repo, findings: findings }
+            nil
+        end
+
+        _output = capture_io { bot.run }
+
+        Bot::SlackAlert.define_singleton_method(:post, original_post)
+
+        assert_equal 0, slack_calls.length,
+            "SlackAlert.post should NOT be called for external repos"
+    ensure
+        ENV.delete("SLACK_WEBHOOK_OSS_ALERTS")
+    end
+
+    def test_slack_alert_does_not_fire_when_no_critical_findings
+        ENV["SLACK_WEBHOOK_OSS_ALERTS"] = "https://hooks.slack.com/services/T00/B00/xxx"
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        @stub_search.candidates = [{ full_name: "CopilotKit/clean-repo", stars: 1000 }]
+        @stub_scanner.scan_results["CopilotKit/clean-repo"] = {
+            findings: [],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["CopilotKit/clean-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+
+        slack_calls = []
+        original_post = Bot::SlackAlert.method(:post)
+        Bot::SlackAlert.define_singleton_method(:post) do |repo:, findings:|
+            slack_calls << { repo: repo }
+            nil
+        end
+
+        _output = capture_io { bot.run }
+
+        Bot::SlackAlert.define_singleton_method(:post, original_post)
+
+        assert_equal 0, slack_calls.length,
+            "SlackAlert.post should NOT be called when there are no critical findings"
+    ensure
+        ENV.delete("SLACK_WEBHOOK_OSS_ALERTS")
+    end
+
+    # ========================================================================
+    # Test A: Opted-out org repo should NOT trigger Slack alert
+    #
+    # The opt-out file (.sentinel-ci.yml with enabled: false) and the
+    # "already uses sentinel" check both key off file_exists? for the same
+    # path. To isolate the opt-out gate, we make file_exists? return false
+    # on the first call (passing the sentinel-detection gate) and true on
+    # the second (triggering the opt-out path). This simulates the scenario
+    # where the detection logic is refined to distinguish opt-out from
+    # active usage, while proving the Slack alert position bug.
+    # ========================================================================
+
+    def test_slack_alert_does_not_fire_for_opted_out_org_repo
+        ENV["SLACK_WEBHOOK_OSS_ALERTS"] = "https://hooks.slack.com/services/T00/B00/xxx"
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        finding = make_shell_injection_finding(line: 12)
+        @stub_search.candidates = [{ full_name: "CopilotKit/opted-out-repo", stars: 1000 }]
+        @stub_scanner.scan_results["CopilotKit/opted-out-repo"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["CopilotKit/opted-out-repo", ".github/.sentinel-ci.yml"]] = "enabled: false\n"
+        @stub_gh_client.file_content_map[["CopilotKit/opted-out-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        # Make file_exists? return false on first call (sentinel-detection gate)
+        # and true on second call (opt-out gate) for the sentinel config path.
+        sentinel_ci_call_count = 0
+        original_file_exists = @stub_gh_client.method(:file_exists?)
+        @stub_gh_client.define_singleton_method(:file_exists?) do |repo, path|
+            if repo == "CopilotKit/opted-out-repo" && path == ".github/.sentinel-ci.yml"
+                sentinel_ci_call_count += 1
+                sentinel_ci_call_count > 1 # false first, true second
+            else
+                original_file_exists.call(repo, path)
+            end
+        end
+
+        slack_calls = []
+        original_post = Bot::SlackAlert.method(:post)
+        Bot::SlackAlert.define_singleton_method(:post) do |repo:, findings:|
+            slack_calls << { repo: repo, findings: findings }
+            nil
+        end
+
+        _output = capture_io { bot.run }
+
+        Bot::SlackAlert.define_singleton_method(:post, original_post)
+
+        assert_equal 0, slack_calls.length,
+            "SlackAlert.post should NOT fire for org repo that has opted out via .sentinel-ci.yml"
+    ensure
+        ENV.delete("SLACK_WEBHOOK_OSS_ALERTS")
+    end
+
+    # ========================================================================
+    # Test B: Org repo with nil content for all files should NOT trigger Slack
+    # ========================================================================
+
+    def test_slack_alert_does_not_fire_when_content_fetch_returns_nil
+        ENV["SLACK_WEBHOOK_OSS_ALERTS"] = "https://hooks.slack.com/services/T00/B00/xxx"
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        finding = make_shell_injection_finding(line: 12)
+        @stub_search.candidates = [{ full_name: "CopilotKit/nil-content-repo", stars: 1000 }]
+        @stub_scanner.scan_results["CopilotKit/nil-content-repo"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+            # No cached workflows — content will be nil
+            workflows: [],
+        }
+
+        @stub_gh_client.file_exists_map[["CopilotKit/nil-content-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        # Crucially: do NOT set file_content_map for the workflow file,
+        # so fetch_file_content returns nil
+        # @stub_gh_client.file_content_map is NOT set for this repo's workflow
+
+        slack_calls = []
+        original_post = Bot::SlackAlert.method(:post)
+        Bot::SlackAlert.define_singleton_method(:post) do |repo:, findings:|
+            slack_calls << { repo: repo, findings: findings }
+            nil
+        end
+
+        _output = capture_io { bot.run }
+
+        Bot::SlackAlert.define_singleton_method(:post, original_post)
+
+        assert_equal 0, slack_calls.length,
+            "SlackAlert.post should NOT fire when all workflow content fetches return nil (findings never reach queue)"
+    ensure
+        ENV.delete("SLACK_WEBHOOK_OSS_ALERTS")
+    end
+
+    # ========================================================================
+    # Test C (regression): Org repo with findings that reach queue DOES trigger
+    # ========================================================================
+
+    def test_slack_alert_fires_for_org_repo_findings_that_reach_queue
+        ENV["SLACK_WEBHOOK_OSS_ALERTS"] = "https://hooks.slack.com/services/T00/B00/xxx"
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        finding = make_shell_injection_finding(line: 12)
+        @stub_search.candidates = [{ full_name: "CopilotKit/queue-alert-repo", stars: 1000 }]
+        @stub_scanner.scan_results["CopilotKit/queue-alert-repo"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["CopilotKit/queue-alert-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["CopilotKit/queue-alert-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        slack_calls = []
+        original_post = Bot::SlackAlert.method(:post)
+        Bot::SlackAlert.define_singleton_method(:post) do |repo:, findings:|
+            slack_calls << { repo: repo, findings: findings }
+            nil
+        end
+
+        _output = capture_io { bot.run }
+
+        Bot::SlackAlert.define_singleton_method(:post, original_post)
+
+        # Verify findings actually reached the queue
+        queue = bot.instance_variable_get(:@queue)
+        assert queue.pending.length > 0, "Findings should have reached the queue"
+
+        assert_equal 1, slack_calls.length,
+            "SlackAlert.post SHOULD fire for org repo whose findings actually reach the queue"
+        assert_equal "CopilotKit/queue-alert-repo", slack_calls.first[:repo]
+    ensure
+        ENV.delete("SLACK_WEBHOOK_OSS_ALERTS")
+    end
+
+    # ========================================================================
+    # Test D: dry_run mode suppresses Slack alerts
+    # ========================================================================
+
+    def test_slack_alert_does_not_fire_in_dry_run_mode
+        ENV["SLACK_WEBHOOK_OSS_ALERTS"] = "https://hooks.slack.com/services/T00/B00/xxx"
+        bot = build_bot(pattern: "shell-injection", dry_run: true)
+
+        finding = make_shell_injection_finding(line: 12)
+        @stub_search.candidates = [{ full_name: "CopilotKit/dryrun-repo", stars: 1000 }]
+        @stub_scanner.scan_results["CopilotKit/dryrun-repo"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["CopilotKit/dryrun-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["CopilotKit/dryrun-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        slack_calls = []
+        original_post = Bot::SlackAlert.method(:post)
+        Bot::SlackAlert.define_singleton_method(:post) do |repo:, findings:|
+            slack_calls << { repo: repo, findings: findings }
+            nil
+        end
+
+        _output = capture_io { bot.run }
+
+        Bot::SlackAlert.define_singleton_method(:post, original_post)
+
+        assert_equal 0, slack_calls.length,
+            "SlackAlert.post should NOT fire in dry_run mode — no real action was taken"
+    ensure
+        ENV.delete("SLACK_WEBHOOK_OSS_ALERTS")
+    end
+
+    # ========================================================================
+    # Test E: queue_mode DOES fire Slack alerts for critical org findings
+    # (per spec: Block + Queue + Slack alert all three apply)
+    # ========================================================================
+
+    def test_slack_alert_does_fire_in_queue_mode_for_critical_org_finding
+        ENV["SLACK_WEBHOOK_OSS_ALERTS"] = "https://hooks.slack.com/services/T00/B00/xxx"
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        finding = make_shell_injection_finding(line: 12)
+        @stub_search.candidates = [{ full_name: "CopilotKit/queue-alert-test", stars: 1000 }]
+        @stub_scanner.scan_results["CopilotKit/queue-alert-test"] = {
+            findings: [finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["CopilotKit/queue-alert-test", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["CopilotKit/queue-alert-test", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        slack_calls = []
+        original_post = Bot::SlackAlert.method(:post)
+        Bot::SlackAlert.define_singleton_method(:post) do |repo:, findings:|
+            slack_calls << { repo: repo, findings: findings }
+            nil
+        end
+
+        _output = capture_io { bot.run }
+
+        Bot::SlackAlert.define_singleton_method(:post, original_post)
+
+        assert_equal 1, slack_calls.length,
+            "SlackAlert.post SHOULD fire in queue_mode — spec mandates Block + Queue + Slack alert"
+        assert_equal "CopilotKit/queue-alert-test", slack_calls.first[:repo]
+        assert_equal 1, slack_calls.first[:findings].length
+    ensure
+        ENV.delete("SLACK_WEBHOOK_OSS_ALERTS")
+    end
+
+    # ========================================================================
+    # Test: Critical-severity rules flow through without an allowlist
+    #
+    # Regression test for the CRITICAL_RULES allowlist bug: a rule that
+    # returns :critical severity must flow through scan_and_fix into the
+    # queue without needing to be added to any hardcoded allowlist. This
+    # test uses "ai-config-injection" (a real rule added in PR #31) which
+    # was silently dropped in production because it was not in CRITICAL_RULES.
+    # ========================================================================
+
+    def test_critical_severity_rule_flows_through_without_allowlist
+        bot = build_bot(pattern: "shell-injection", queue_mode: true)
+
+        # Create a finding from a rule NOT in the old CRITICAL_RULES allowlist
+        novel_finding = Finding.new(
+            rule: "ai-config-injection",
+            severity: :critical,
+            file: "ci.yml",
+            line: 8,
+            code: 'uses: actions/checkout@v4',
+            message: "AI tool configuration may be injected via PR",
+            fix: "Review manually"
+        )
+
+        @stub_search.candidates = [{ full_name: "owner/ai-vuln-repo", stars: 1000 }]
+        @stub_scanner.scan_results["owner/ai-vuln-repo"] = {
+            findings: [novel_finding],
+            output: "",
+            workflow_count: 1,
+        }
+
+        @stub_gh_client.file_exists_map[["owner/ai-vuln-repo", ".github/.sentinel-ci.yml"]] = false
+        @stub_gh_client.workflows = []
+        @stub_gh_client.file_content_map[["owner/ai-vuln-repo", ".github/workflows/ci.yml"]] = vulnerable_workflow_yaml
+
+        _output = capture_io { bot.run }
+
+        summary = bot.instance_variable_get(:@summary)
+
+        # The finding is :critical severity and the scanner was built with
+        # min_severity: :critical, so it MUST count as a finding and reach
+        # the queue. If a hardcoded allowlist silently drops it, this fails.
+        assert summary[:findings] > 0,
+            "Critical-severity findings must not be silently dropped by a hardcoded allowlist. " \
+            "Got findings=#{summary[:findings]} (expected > 0)"
+
+        queue = bot.instance_variable_get(:@queue)
+        pending = queue.pending
+
+        # The finding is advisory-only (not auto-fixable), so it should be
+        # queued as an issue.
+        assert pending.length > 0,
+            "Critical-severity advisory findings must reach the queue. " \
+            "Got #{pending.length} pending entries (expected > 0)"
+
+        entry = pending.first
+        assert_equal "owner/ai-vuln-repo", entry["repo"]
+        assert_equal "issue", entry["type"],
+            "Advisory-only critical findings should queue as issues"
+        assert entry["findings"].any? { |f| f["rule"] == "ai-config-injection" },
+            "The ai-config-injection finding must appear in the queued entry"
     end
 end

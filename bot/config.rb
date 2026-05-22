@@ -2,9 +2,18 @@ module Bot
     module Config
         MIN_STARS = 100
         MAX_PRS_PER_DAY = 300
-        FIXABLE_RULES = %w[unpinned-actions shell-injection-expr missing-persist-credentials workflow-dispatch-injection missing-permissions missing-timeouts].freeze
-        CRITICAL_RULES = %w[shell-injection-expr shell-injection-jq dangerous-triggers github-script-injection hardcoded-secrets].freeze
 
+        # Org repos covered by per-repo PR action; bot scans them as a backstop.
+        # Updated 2026-05-22 for sentinel-org-rollout.
+        ORG_REPOS = %w[
+            CopilotKit/CopilotKit
+            CopilotKit/aimock
+            CopilotKit/skills
+            CopilotKit/pathfinder
+            CopilotKit/vscode-extension
+            ag-ui-protocol/ag-ui
+        ].freeze
+        FIXABLE_RULES = %w[unpinned-actions shell-injection-expr missing-persist-credentials workflow-dispatch-injection missing-permissions missing-timeouts].freeze
         SEARCH_QUERIES = [
             # Shell injection vectors
             { pattern: "shell-injection", query: '"${{ github.event.pull_request.title }}" path:.github/workflows language:YAML' },
