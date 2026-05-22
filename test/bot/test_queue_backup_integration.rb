@@ -489,7 +489,9 @@ class TestQueueBackupIntegration < Minitest::Test
         $stderr.puts "  PRs opened: #{summary[:prs_opened]}"
         $stderr.puts "  Errors: #{summary[:errors]}"
 
-        assert_equal 2, summary[:scanned], "Should have scanned 2 repos"
+        # 6 org backstop repos + 2 search candidates
+        assert_equal Bot::Config::ORG_REPOS.length + 2, summary[:scanned],
+            "Should have scanned org backstop repos + 2 search repos"
         assert summary[:findings] > 0, "Should have found critical findings"
         assert_equal 2, summary[:queued], "Should have queued 2 entries"
         assert_equal 0, summary[:prs_opened], "Should not have opened PRs (queue mode)"

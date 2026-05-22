@@ -355,7 +355,7 @@ class TestQueueBackupEdgeCases < Minitest::Test
 
         bot = build_bot(pattern: "shell-injection", queue_mode: true)
 
-        # Only low and medium findings — these are NOT in CRITICAL_RULES
+        # Only low and medium findings — below the critical/high severity gate
         low_finding = make_low_severity_finding
         medium_finding = make_medium_severity_finding
 
@@ -808,8 +808,9 @@ class TestQueueBackupEdgeCases < Minitest::Test
             # Expected: the repo is NOT skipped due to pattern/rule name mismatch
             assert_equal 0, summary[:skipped],
                 "Repo should NOT be skipped because pattern='shell-injection' != rule='shell-injection-expr'"
-            assert_equal 1, summary[:scanned],
-                "Repo should be scanned because already_processed? returns false"
+            # 6 org backstop repos + 1 search candidate
+            assert_equal Bot::Config::ORG_REPOS.length + 1, summary[:scanned],
+                "Repo should be scanned because already_processed? returns false (plus org backstop repos)"
 
             # DOCUMENT THE BUG: This is a real finding.
             # The already_processed? check uses the search pattern, not the finding rule.
@@ -834,8 +835,9 @@ class TestQueueBackupEdgeCases < Minitest::Test
         summary2 = bot2.instance_variable_get(:@summary)
         assert_equal 1, summary2[:skipped],
             "Repo SHOULD be skipped when pattern exactly matches stored rule"
-        assert_equal 0, summary2[:scanned],
-            "Skipped repo should not be scanned"
+        # 6 org backstop repos are always scanned
+        assert_equal Bot::Config::ORG_REPOS.length, summary2[:scanned],
+            "Skipped repo should not be scanned (only org backstop repos scanned)"
     end
 
     # ========================================================================
