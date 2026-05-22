@@ -1,0 +1,83 @@
+name: Canary Coverage
+on:
+  pull_request:
+    paths:
+      - 'lib/rules/**'
+      - '.github/workflows/canary-coverage.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/rules/**'
+      - '.github/workflows/canary-coverage.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout sentinel
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Checkout sentinel-canary
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: jpr5/sentinel-canary
+          path: canary
+          token: ${{ secrets.CANARY_READ_TOKEN }}
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@afeafc3d1ab54a631816aba4c914a0081c12ff2f # v1.310.0
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Enumerate rules
+        id: rules
+        run: |
+          set -euo pipefail
+          # Extract rule names from the `def name = "..."` declarations in each rule file.
+          # This matches what the scanner reports in the JSON output, which is the
+          # authoritative comparison target.
+          rules=$(grep -h 'def name = "' lib/rules/*.rb | sed 's/.*def name = "//;s/"//' | sort -u)
+          count=$(echo "$rules" | wc -l | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "$rules" > /tmp/expected-rules.txt
+          echo "Expected $count rules:"
+          cat /tmp/expected-rules.txt
+
+      - name: Scan canary
+        id: scan
+        run: |
+          set -euo pipefail
+          # bin/sentinel exits 1 when critical/high findings exist (which the
+          # canary is designed to produce). Capture exit code; treat 0 and 1 as
+          # success, any other code as a real scan failure.
+          bin/sentinel --local canary --format json > /tmp/canary-findings.json && scan_exit=0 || scan_exit=$?
+          if [ "$scan_exit" -ne 0 ] && [ "$scan_exit" -ne 1 ]; then
+              echo "::error::Unexpected scan failure (exit $scan_exit)"
+              cat /tmp/canary-findings.json
+              exit "$scan_exit"
+          fi
+          jq -r '.findings | map(.rule) | unique[]' /tmp/canary-findings.json | sort -u > /tmp/fired-rules.txt
+          fired_count=$(wc -l < /tmp/fired-rules.txt | tr -d ' ')
+          echo "fired_count=$fired_count" >> "$GITHUB_OUTPUT"
+          echo "Fired rules:"
+          cat /tmp/fired-rules.txt
+
+      - name: Assert 100% coverage
+        run: |
+          set -euo pipefail
+          missing=$(comm -23 /tmp/expected-rules.txt /tmp/fired-rules.txt)
+          if [ -n "$missing" ]; then
+              echo "::error::Canary coverage gap. The following rules do not fire on the canary repo:"
+              echo "$missing"
+              echo "::error::Add matchable workflow(s) to jpr5/sentinel-canary before merging."
+              exit 1
+          fi
+          echo "All ${{ steps.rules.outputs.count }} rules fire on canary. Coverage: 100%."
