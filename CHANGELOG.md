@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1 (2026-05-22)
+
+### Bug Fixes
+- Fix warn-only mode: read `INPUT_FAIL-ON-FINDINGS` env var (GitHub Actions passes docker action inputs with hyphens preserved, not converted to underscores)
+
 ## 1.3.0 (2026-05-18)
 
 ### New Features
