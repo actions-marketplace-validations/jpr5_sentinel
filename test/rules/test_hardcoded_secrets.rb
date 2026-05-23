@@ -230,4 +230,122 @@ class TestHardcodedSecrets < Minitest::Test
         password_findings = findings.select { |f| f.message.match?(/password/i) }
         assert_empty password_findings
     end
+
+    # --- setup-java env-var-name slot tests ---
+
+    def test_safe_setup_java_server_password_env_var_name
+        yaml = <<~YAML
+          on: push
+          jobs:
+            deploy:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/setup-java@v4
+                  with:
+                    distribution: temurin
+                    java-version: 11
+                    server-id: ossrh
+                    server-password: MAVEN_PASSWORD
+        YAML
+        wf = Workflow.new(filename: "publish.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_empty password_findings, "server-password with UPPER_SNAKE env var name should not fire"
+    end
+
+    def test_safe_setup_java_server_username_env_var_name
+        yaml = <<~YAML
+          on: push
+          jobs:
+            deploy:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/setup-java@v4
+                  with:
+                    distribution: temurin
+                    java-version: 11
+                    server-id: ossrh
+                    server-username: MAVEN_USERNAME
+                    server-password: MAVEN_PASSWORD
+        YAML
+        wf = Workflow.new(filename: "publish.yml", content: yaml)
+        findings = @rule.check(wf)
+        # server-username doesn't match PASSWORD_PATTERN, but verify no false positives overall
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_empty password_findings, "setup-java env var name slots should not fire"
+    end
+
+    def test_safe_setup_java_gpg_passphrase_env_var_name
+        yaml = <<~YAML
+          on: push
+          jobs:
+            deploy:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/setup-java@v4
+                  with:
+                    distribution: temurin
+                    java-version: 11
+                    gpg-passphrase: MAVEN_GPG_PASSPHRASE
+        YAML
+        wf = Workflow.new(filename: "publish.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_empty password_findings, "gpg-passphrase with UPPER_SNAKE env var name should not fire"
+    end
+
+    def test_flags_setup_java_literal_password_in_env_slot
+        yaml = <<~YAML
+          on: push
+          jobs:
+            deploy:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/setup-java@v4
+                  with:
+                    distribution: temurin
+                    java-version: 11
+                    server-id: ossrh
+                    server-password: my-actual-secret-value
+        YAML
+        wf = Workflow.new(filename: "publish.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_operator password_findings.length, :>=, 1,
+            "Literal password value in setup-java slot should still fire"
+    end
+
+    def test_flags_password_in_generic_step
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Login
+                  run: echo "password: secret123"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_operator password_findings.length, :>=, 1,
+            "Hardcoded password in generic step should still fire"
+    end
+
+    def test_flags_password_akia_in_generic_step
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Login
+                  run: echo "password: AKIAIOSFODNN7EXAMPLE"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        # Should fire for AWS key AND/OR password
+        assert_operator findings.length, :>=, 1,
+            "AKIA key as password value should fire"
+    end
 end

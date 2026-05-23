@@ -19,8 +19,18 @@ module Rules
         SAFE_VALUE_PATTERN = /\$\{\{.*\}\}|\$[A-Z_]+|\A[A-Z][A-Z0-9_]+\z/
         SAFE_PASSWORDS = %w[postgres password test example changeme admin root dummy placeholder true false].freeze
 
+        # Actions whose `with:` slots accept env-var *names* (not values).
+        # When the value looks like an UPPER_SNAKE_CASE identifier it is an
+        # env-var name reference, not a hardcoded credential.
+        ENV_NAME_SLOTS = {
+            /actions\/setup-java/ => %w[server-username server-password gpg-passphrase gpg-private-key keystore-password],
+        }.freeze
+
+        ENV_VAR_NAME_PATTERN = /\A[A-Z][A-Z0-9_]*\z/
+
         def check(workflow)
             findings = []
+            allowlisted_lines = build_env_name_slot_lines(workflow)
 
             workflow.raw_lines.each_with_index do |line, idx|
                 line_num = idx + 1
@@ -46,6 +56,7 @@ module Rules
                     value = line[/password:\s*(.+)/i, 1]&.strip
                     if value && !value.match?(SAFE_VALUE_PATTERN) && !value.start_with?("#")
                         next if SAFE_PASSWORDS.include?(value.strip.downcase)
+                        next if allowlisted_lines.include?(line_num)
                         findings << finding(workflow,
                             line: line_num,
                             code: stripped,
@@ -57,6 +68,34 @@ module Rules
             end
 
             findings
+        end
+
+        private
+
+        # Build a list of line numbers where a known action's `with:` slot
+        # contains an env-var name (UPPER_SNAKE_CASE) rather than a credential.
+        def build_env_name_slot_lines(workflow)
+            lines = []
+            workflow.jobs.each do |_job_id, job_hash|
+                workflow.steps(job_hash).each do |step|
+                    next unless step["uses"]
+                    ENV_NAME_SLOTS.each do |action_pattern, slot_names|
+                        next unless step["uses"].match?(action_pattern)
+                        with_block = step["with"] || {}
+                        slot_names.each do |slot|
+                            next unless with_block[slot]
+                            value = with_block[slot].to_s.strip
+                            next unless value.match?(ENV_VAR_NAME_PATTERN)
+                            workflow.raw_lines.each_with_index do |raw_line, idx|
+                                if raw_line.match?(/\b#{Regexp.escape(slot)}:\s*#{Regexp.escape(value)}\b/)
+                                    lines << (idx + 1)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            lines
         end
     end
 end
