@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2 (2026-05-22)
+
+### Bug Fixes
+- hardcoded-secrets: stop flagging bare uppercase env-var-name references in `with:` blocks (e.g. `server-password: MAVEN_PASSWORD` in `actions/setup-java`). These are env-var-name references read by the action, not literal passwords.
+
 ## 1.3.1 (2026-05-22)
 
 ### Bug Fixes
