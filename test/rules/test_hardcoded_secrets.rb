@@ -142,4 +142,92 @@ class TestHardcodedSecrets < Minitest::Test
         password_findings = findings.select { |f| f.message.match?(/password/i) }
         assert_empty password_findings
     end
+
+    def test_bare_uppercase_env_var_name_is_safe
+        # actions/setup-java uses bare env-var-name references for server-password:
+        # e.g. `server-password: MAVEN_PASSWORD` means "read the MAVEN_PASSWORD env var",
+        # not a literal password value. Same convention for GITHUB_TOKEN, MY_SECRET_KEY, etc.
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/setup-java@v4
+                  with:
+                    server-password: MAVEN_PASSWORD
+                - name: Step 2
+                  with:
+                    password: GITHUB_TOKEN
+                - name: Step 3
+                  with:
+                    password: MY_SECRET_KEY
+                - name: Step 4
+                  with:
+                    password: A_B_C_123
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_empty password_findings, "Bare uppercase env-var-name references should not trigger"
+    end
+
+    def test_literal_uppercase_password_with_special_chars_still_fires
+        # Mixed case + special characters means it's an actual password literal,
+        # not an env-var reference. Must still flag.
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Login
+                  run: |
+                    password: MyPass!123
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        refute_empty password_findings, "Literal mixed-case password with special chars should still be flagged"
+    end
+
+    def test_existing_safe_patterns_still_safe
+        # Regression: ${{ secrets.X }} and $VAR references must remain safe.
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Step 1
+                  with:
+                    password: ${{ secrets.DB_PASSWORD }}
+                - name: Step 2
+                  run: |
+                    password: $MY_VAR
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_empty password_findings
+    end
+
+    def test_existing_safe_passwords_still_safe
+        # Regression: common test placeholder passwords must remain safe.
+        yaml = <<~YAML
+          on: push
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              services:
+                db:
+                  image: postgres:latest
+                  env:
+                    POSTGRES_PASSWORD: postgres
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        password_findings = findings.select { |f| f.message.match?(/password/i) }
+        assert_empty password_findings
+    end
 end
