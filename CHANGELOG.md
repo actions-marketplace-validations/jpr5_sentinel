@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.4 (2026-05-26)
+
+### Bug Fixes
+- github-script-injection: stop flagging `${{ inputs.* }}` / `${{ github.event.* }}` expressions that appear in a sibling `env:` block paired with the corresponding `process.env.VAR` reference in the `script:` body. This is the GHA-recommended safe pattern and was being flagged as a false positive after the v1.3.3 lookback-cap removal. Inline `script: "const x = '${{ ... }}';"` forms continue to fire correctly.
+
 ## 1.3.3 (2026-05-26)
 
 ### Bug Fixes
