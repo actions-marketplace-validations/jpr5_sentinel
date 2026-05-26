@@ -372,4 +372,137 @@ class TestGithubScriptInjection < Minitest::Test
         assert_equal 1, findings.length, "inputs.* must be flagged even on workflow_dispatch-only triggers"
         assert_match(/inputs\.name/, findings.first.message)
     end
+
+    # Sibling env: block below script: should NOT be treated as inside the
+    # script body.  The recommended safe pattern is to pass values via env:
+    # and reference them with process.env — flagging the env: block is a
+    # false positive.
+    def test_no_flag_input_in_sibling_env_block
+        yaml = <<~YAML
+          on: workflow_dispatch
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Resolve PR HEAD SHA
+                  id: resolve
+                  uses: actions/github-script@v7
+                  with:
+                    script: |
+                      const pr = await github.rest.pulls.get({
+                        pull_number: Number(process.env.PR_NUMBER),
+                      });
+                      core.setOutput('head_sha', pr.data.head.sha);
+                  env:
+                    PR_NUMBER: ${{ github.event.inputs.pr_number }}
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings, "env: block is a sibling of with:/script:, not inside the script body"
+    end
+
+    # Same pattern but with env: ABOVE with:/script: — should also be safe.
+    def test_no_flag_input_in_sibling_env_block_above_with
+        yaml = <<~YAML
+          on: workflow_dispatch
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Resolve PR HEAD SHA
+                  uses: actions/github-script@v7
+                  env:
+                    PR_NUMBER: ${{ github.event.inputs.pr_number }}
+                  with:
+                    script: |
+                      const pr = await github.rest.pulls.get({
+                        pull_number: Number(process.env.PR_NUMBER),
+                      });
+                      core.setOutput('head_sha', pr.data.head.sha);
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_empty findings, "env: block above with: is still a sibling, not inside script body"
+    end
+
+    # Regression: ${{ inputs.* }} INSIDE the script body must still fire.
+    def test_still_flags_input_inside_script_body
+        yaml = <<~YAML
+          on: workflow_dispatch
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/github-script@v7
+                  with:
+                    script: |
+                      const name = "${{ inputs.name }}";
+                      console.log(name);
+                  env:
+                    SAFE_VAR: "static-value"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length, "Input inside script body must still be flagged"
+        assert_match(/inputs\.name/, findings.first.message)
+    end
+
+    # Inline script form: dangerous expression on same line as `script:` key
+    # must still be detected (regression from indent-check hotfix).
+    def test_flags_inline_dangerous_in_script_value
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/github-script@v7
+                  with:
+                    script: "const t = '${{ github.event.pull_request.title }}';"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length, "Inline dangerous expr on script: line must be flagged"
+        assert_match(/pull_request\.title/, findings.first.message)
+    end
+
+    # Inline script form with input expression.
+    def test_flags_inline_input_in_script_value
+        yaml = <<~YAML
+          on: workflow_dispatch
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/github-script@v7
+                  with:
+                    script: "const name = '${{ inputs.foo }}';"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length, "Inline input expr on script: line must be flagged"
+        assert_match(/inputs\.foo/, findings.first.message)
+    end
+
+    # Regression: dangerous expr INSIDE script body with sibling env: below
+    # must still fire.
+    def test_still_flags_dangerous_inside_script_with_trailing_env
+        yaml = <<~YAML
+          on: pull_request
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/github-script@v7
+                  with:
+                    script: |
+                      const title = "${{ github.event.pull_request.title }}";
+                  env:
+                    SOMETHING: "safe"
+        YAML
+        wf = Workflow.new(filename: "ci.yml", content: yaml)
+        findings = @rule.check(wf)
+        assert_equal 1, findings.length, "Dangerous expr inside script body must still be flagged"
+        assert_match(/pull_request\.title/, findings.first.message)
+    end
 end

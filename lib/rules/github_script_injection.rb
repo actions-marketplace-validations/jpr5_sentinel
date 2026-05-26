@@ -64,12 +64,26 @@ module Rules
         STEP_KEYS = /(?:id|if|name|uses|run|working-directory|shell|with|env|continue-on-error|timeout-minutes|permissions|secrets)/
 
         def in_github_script_block?(workflow, target_line)
+            target_content = workflow.raw_lines[target_line - 1]
+            return false unless target_content
+            target_indent = target_content[/^\s*/].length
+
             # Scan backward with no cap — use step keys as hard boundaries.
             (target_line - 1).downto(0) do |i|
                 content = workflow.raw_lines[i]
                 next unless content
 
                 if content.match?(/^\s+script:\s*[\|>]?\s*$/) || content.match?(/^\s+script:\s+\S/)
+                    script_indent = content[/^\s*/].length
+
+                    # The target line must be indented deeper than the script: key
+                    # to be part of the script block body, UNLESS the target IS
+                    # the script: line itself (inline script form like
+                    # `script: "const t = '${{ ... }}'"`).  If it's a different
+                    # line at the same or shallower indent, it's a sibling
+                    # step-key (e.g. env:), not script content.
+                    return false unless target_indent > script_indent || i == (target_line - 1)
+
                     # Found a script: key. Now scan upward from here with no cap,
                     # looking for uses: actions/github-script. Stop at any step key
                     # that is NOT with:, env:, or uses: (those can appear between
