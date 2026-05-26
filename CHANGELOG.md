@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.3 (2026-05-26)
+
+### Bug Fixes
+- build-publish-same-job: recognize `--ignore-scripts` / `--no-scripts` as a per-command mitigation (collapsing shell line continuations, stripping inline comments via a POSIX-correct helper). Reject `--ignore-scripts=false` and similar bypasses.
+- hardcoded-secrets: allowlist `actions/setup-java` env-name slots (`server-username`, `server-password`, `gpg-passphrase`, `gpg-private-key`, `keystore-password`) when the value matches an UPPER_SNAKE_CASE env var name.
+- github-script-injection: cover `${{ inputs.* }}` and `${{ github.event.inputs.* }}` references inside `actions/github-script` `script:` blocks. Remove 30-line outer and 15-line inner lookback caps so long script bodies / long `with:` / `env:` blocks no longer cause missed findings. Evaluate INPUT and DANGEROUS expression paths independently so the event guard is no longer bypassed by mixed-pattern lines and a workflow_dispatch-only trigger no longer short-circuits input checks.
+- workflow-dispatch-injection: make `in_run_block?` robust to long run blocks and uncommon step properties (STEP_KEYS-anchored backward scan, no length cap). Discriminate step-level `run:` from a `with: { run: ... }` action parameter via YAML indent, eliminating false positives on composite actions that take a command as input.
+
 ## 1.3.2 (2026-05-22)
 
 ### Bug Fixes
